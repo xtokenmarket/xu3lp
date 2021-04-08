@@ -1,10 +1,17 @@
 {
   "name": "hardhat-project",
   "devDependencies": {
+    "@openzeppelin/hardhat-upgrades": "^1.6.0",
     "hardhat": "^2.1.2"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.0.0",
-    "@openzeppelin/contracts-upgradeable": "^4.0.0"
+    "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@openzeppelin/contracts": "3.4.1-solc-0.7-2",
+    "@openzeppelin/contracts-upgradeable": "3.4.1-solc-0.7-2",
+    "@uniswap/v3-core": "^1.0.0-rc.1",
+    "@uniswap/v3-periphery": "^1.0.0-beta.15",
+    "ethers": "^5.1.0",
+    "hardhat-deploy": "^0.7.2",
+    "hardhat-deploy-ethers": "^0.3.0-beta.7"
   }
 }
