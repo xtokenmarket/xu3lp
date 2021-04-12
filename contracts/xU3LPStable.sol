@@ -42,7 +42,8 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     ISwapRouter router;
 
     uint256 public adminActiveTimestamp;
-    uint256 public withdrawableStablecoinFees;
+    uint256 public withdrawableToken0Fees;
+    uint256 public withdrawableToken1Fees;
 
     struct FeeDivisors {
         uint256 mintFee;
@@ -100,12 +101,13 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
             token0.safeTransferFrom(msg.sender, address(this), amount);
             fee = _calculateFee(amount, feeDivisors.mintFee);
             _mintInternal(amount.sub(fee));
+            _incrementWithdrawableToken0Fees(fee);
         } else {
             token1.safeTransferFrom(msg.sender, address(this), amount);
-            fee = _calculateFee(amount.mul(getToken1Price()), feeDivisors.mintFee);
-            _mintInternal(amount.sub(fee));
+            fee = _calculateFee(amount, feeDivisors.mintFee);
+            _mintInternal(amount.mul(getToken1Price()).sub(fee));
+            _incrementWithdrawableToken1Fees(fee);
         }
-        _incrementWithdrawableStablecoinFees(fee);
     }
 
     function burn(uint8 outputAsset, uint256 amount) external {
@@ -120,7 +122,7 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         } else {
             proRataBalance = (totalBalance
                             .mul(amount
-                            .mul(getToken1Price())))
+                            .div(getToken1Price())))
                             .div(totalSupply());
         }
 
@@ -128,10 +130,15 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         super._burn(msg.sender, amount);
 
         uint256 fee = _calculateFee(proRataBalance, feeDivisors.burnFee);
-        _incrementWithdrawableStablecoinFees(fee);
+        if(outputAsset == 0) {
+            _incrementWithdrawableToken0Fees(fee);
+        } else {
+            _incrementWithdrawableToken1Fees(fee);
+        }
         uint256 transferAmount = proRataBalance.sub(fee);
         if(outputAsset == 0) {
-            uint256 balance0 = token0.balanceOf(address(this));
+            uint256 balance0 = token0.balanceOf(address(this))
+                                        .sub(withdrawableToken0Fees);
             
             if(balance0 < transferAmount) {
                 // amounts could be changed to balance the tokens
@@ -141,7 +148,9 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
             }
             token0.safeTransfer(msg.sender, transferAmount);
         } else {
-            uint256 balance1 = token1.balanceOf(address(this));
+            uint256 balance1 = token1.balanceOf(address(this))
+                                        .sub(withdrawableToken1Fees);
+
             if(balance1 < transferAmount) {
                 uint256 amountIn = transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(balance1);
                 uint256 amountOut = transferAmount.add(1).sub(balance1);
@@ -150,7 +159,6 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
             token1.safeTransfer(msg.sender, transferAmount);
         }
     }
-
 
 
     // priced in terms of asset0
@@ -171,8 +179,8 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
 
     // Get balance in xU3LP contract
     function getBufferBalance() public view returns (uint256) {
-        uint256 balance0 = token0.balanceOf(address(this));
-        uint256 balance1 = token1.balanceOf(address(this));
+        uint256 balance0 = (token0.balanceOf(address(this))).sub(withdrawableToken0Fees);
+        uint256 balance1 = (token1.balanceOf(address(this))).sub(withdrawableToken1Fees);
         return balance0.add(balance1.mul(getToken1Price()));
     }
 
@@ -280,8 +288,9 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         );
 
         uint256 fee0 = _calculateFee(collected0, feeDivisors.claimFee);
-        uint256 fee1 = _calculateFee(collected1.mul(getToken1Price()), feeDivisors.claimFee);
-        _incrementWithdrawableStablecoinFees(fee0.add(fee1));
+        uint256 fee1 = _calculateFee(collected1, feeDivisors.claimFee);
+        _incrementWithdrawableToken0Fees(fee0);
+        _incrementWithdrawableToken1Fees(fee1);
     }
 
     /*
@@ -321,8 +330,12 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         }
     }
 
-    function _incrementWithdrawableStablecoinFees(uint256 _feeAmount) private {
-        withdrawableStablecoinFees = withdrawableStablecoinFees.add(_feeAmount);
+    function _incrementWithdrawableToken0Fees(uint256 _feeAmount) private {
+        withdrawableToken0Fees = withdrawableToken0Fees.add(_feeAmount);
+    }
+
+    function _incrementWithdrawableToken1Fees(uint256 _feeAmount) private {
+        withdrawableToken1Fees = withdrawableToken1Fees.add(_feeAmount);
     }
 
     /*

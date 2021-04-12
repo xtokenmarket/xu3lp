@@ -15,22 +15,34 @@ describe('Contract: xU3LP', async () => {
 
   describe('Mint and burn', async () => {
     it('mint xu3lp tokens to user', async () => {
-        await xU3LP.mintWithToken(0, '10000');
-        await xU3LP.mintWithToken(1, '10000');    
+        let amount = 10000;
+        await xU3LP.mintWithToken(0, amount);
         let balance = await getXU3LPBalance(xU3LP, admin);
+        let feeDivisors = await xU3LP.feeDivisors();
+        let mintFee = feeDivisors.mintFee;
 
-        assert(balance == 20000);
+        let actualBalance = amount - (amount / mintFee);
+
+        assert(balance == (actualBalance));
     })
 
     it('burn xu3lp tokens from user', async () => {
-      await xU3LP.mintWithToken(0, '10000');
-      await xU3LP.mintWithToken(1, '10000');
+      let mintAmount = 10000;
+      let burnAmount = 100;
+      await xU3LP.mintWithToken(0, mintAmount);
 
-      await xU3LP.burn(0, '100');
-      await xU3LP.burn(1, '100');
+      await xU3LP.burn(0, burnAmount);
+      
+      let feeDivisors = await xU3LP.feeDivisors();
+      let mintFee = feeDivisors.mintFee;
+      let burnFee = feeDivisors.burnFee;
+
+      let actualBalance = new Number(
+                          (mintAmount - (mintAmount / mintFee) - 
+                          burnAmount - (burnAmount / burnFee))).toFixed(0);
 
       let balance = await getXU3LPBalance(xU3LP, admin);
-      assert(balance == (20000 - 200))
+      assert(balance == actualBalance)
     })
   })
 })

@@ -18,18 +18,20 @@ async function deployXU3LP() {
     const poolAddress = await uniFactory.getPool(dai.address, usdc.address, 500);
     console.log('pool deployed');
 
-    const pool = await ethers.getContractAt(UniPool.abi, poolAddress);
-    await pool.initialize(ethers.BigNumber.from('79228162514264337593543950336'));
-
-    const Router = new ethers.ContractFactory(swapRouter.abi, swapRouter.bytecode, signers[0]);
-    const router = await Router.deploy(uniFactory.address, dai.address);
-
     // 0.997 - 1.003 price
     const lowTick = -30;
     const highTick = 30;
     // Prices calculated using the ticks above with TickMath.getSqrtRatioAtTick()
     const lowPrice = ethers.BigNumber.from('79109415290437042302807587396');
     const highPrice = ethers.BigNumber.from('79347087983666005045280518415');
+    const price = ethers.BigNumber.from('79228162514264337593543950336');
+
+    const pool = await ethers.getContractAt(UniPool.abi, poolAddress);
+    await pool.initialize(price);
+
+    const Router = new ethers.ContractFactory(swapRouter.abi, swapRouter.bytecode, signers[0]);
+    const router = await Router.deploy(uniFactory.address, dai.address);
+
     
     const XU3LP = await ethers.getContractFactory("xU3LPStable");
     const xU3LP = await upgrades.deployProxy(XU3LP, ["xU3LP", lowTick, highTick, lowPrice, highPrice, 
@@ -95,6 +97,11 @@ async function deployXU3LP() {
 
     await getBalance(dai, usdc, xU3LP.address);
     await getBalance(dai, usdc, pool.address);
+
+    // Get fees
+    let feesDAI = await xU3LP.withdrawableToken0Fees();
+    let feesUSDC = await xU3LP.withdrawableToken1Fees();
+    console.log('fees dai:', feesDAI.toString(), 'usdc:', feesUSDC.toString())
   }
 
 deployXU3LP()

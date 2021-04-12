@@ -13,14 +13,21 @@ describe('Contract: xU3LP', async () => {
 
   describe('Rebalance', async () => {
     it('should rebalance toward pool if bufferBalance > 5 % total balance', async () => {
-        await xU3LP.mintWithToken(0, '10000');
-        await xU3LP.mintWithToken(1, '10000');    
+        let amount = 10000;
+        await xU3LP.mintWithToken(0, amount);
+        await xU3LP.mintWithToken(1, amount);
         let originalBalances = await getBalance(dai, usdc, xU3LP.address);
     
         // rebalance -> leaving 95% in the pool and 5% in xu3lp
         await xU3LP.rebalance();
     
         let balances = await getBalance(dai, usdc, xU3LP.address);
+        let feeDivisors = await xU3LP.feeDivisors();
+        let mintFee = feeDivisors.mintFee;
+        // fee + mint() loss
+        balances.dai = balances.dai + 1 - amount / mintFee;
+        balances.usdc = balances.usdc + 1 - amount / mintFee;
+
         assert(balances.dai == originalBalances.dai * (bufferPercentage / 100));
         assert(balances.usdc == originalBalances.usdc * (bufferPercentage / 100));
     })
