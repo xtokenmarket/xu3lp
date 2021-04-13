@@ -15,9 +15,13 @@ import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.so
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
+import '@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol';
 import '@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol';
 
-contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable, IUniswapV3MintCallback {
+import 'hardhat/console.sol';
+
+
+contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -26,6 +30,8 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     uint256 private constant BUFFER_TARGET = 20; // 5% target
     uint256 private constant SWAP_TIMEOUT = 100;
     uint256 private constant SWAP_SLIPPAGE = 100; // 1%
+    uint256 private constant MINT_BURN_TIMEOUT = 1000;
+    uint256 private constant MINT_BURN_SLIPPAGE = 1000;
     uint24 private constant POOL_FEE = 500;
 
     int24 tickLower;
@@ -40,10 +46,12 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
 
     IUniswapV3Pool pool;
     ISwapRouter router;
+    INonfungiblePositionManager positionManager;
 
     uint256 public adminActiveTimestamp;
     uint256 public withdrawableToken0Fees;
     uint256 public withdrawableToken1Fees;
+    uint256 public tokenId; // token id representing this uniswap position
 
     struct FeeDivisors {
         uint256 mintFee;
@@ -60,12 +68,11 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         string memory _symbol,
         int24 _tickLower,
         int24 _tickUpper,
-        uint160 _priceLower,
-        uint160 _priceUpper,
         IERC20 _stablecoin0,
         IERC20 _stablecoin1,
         IUniswapV3Pool _pool,
         ISwapRouter _router,
+        INonfungiblePositionManager _positionManager,
         uint256 _mintFeeDivisor,
         uint256 _burnFeeDivisor,
         uint256 _claimFeeDivisor
@@ -77,15 +84,18 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
 
         tickLower = _tickLower;
         tickUpper = _tickUpper;
-        priceLower = _priceLower;
-        priceUpper = _priceUpper;
+        priceLower = TickMath.getSqrtRatioAtTick(_tickLower);
+        priceUpper = TickMath.getSqrtRatioAtTick(_tickUpper);
         token0 = _stablecoin0;
         token1 = _stablecoin1;
         pool = _pool;
         router = _router;
+        positionManager = _positionManager;
 
         token0.safeIncreaseAllowance(address(router), type(uint256).max);
         token1.safeIncreaseAllowance(address(router), type(uint256).max);
+        token0.safeIncreaseAllowance(address(positionManager), type(uint256).max);
+        token1.safeIncreaseAllowance(address(positionManager), type(uint256).max);
 
         _setFeeDivisors(_mintFeeDivisor, _burnFeeDivisor, _claimFeeDivisor);
     }
@@ -112,9 +122,9 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
 
     function burn(uint8 outputAsset, uint256 amount) external {
         require(amount > 0, 'Must redeem token');
-        uint256 stakedBalance = getStakedBalance();
         uint256 bufferBalance = getBufferBalance();
-        uint256 totalBalance = stakedBalance.add(bufferBalance);
+        uint256 stakedBalance = getStakedBalance();
+        uint256 totalBalance = bufferBalance.add(stakedBalance);
 
         uint256 proRataBalance;
         if(outputAsset == 0) {
@@ -136,32 +146,11 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
             _incrementWithdrawableToken1Fees(fee);
         }
         uint256 transferAmount = proRataBalance.sub(fee);
-        if(outputAsset == 0) {
-            uint256 balance0 = token0.balanceOf(address(this))
-                                        .sub(withdrawableToken0Fees);
-            
-            if(balance0 < transferAmount) {
-                // amounts could be changed to balance the tokens
-                uint256 amountIn = transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(balance0);
-                uint256 amountOut = transferAmount.add(1).sub(balance0);
-                swapToken1ForToken0(amountIn, amountOut);
-            }
-            token0.safeTransfer(msg.sender, transferAmount);
-        } else {
-            uint256 balance1 = token1.balanceOf(address(this))
-                                        .sub(withdrawableToken1Fees);
-
-            if(balance1 < transferAmount) {
-                uint256 amountIn = transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(balance1);
-                uint256 amountOut = transferAmount.add(1).sub(balance1);
-                swapToken0ForToken1(amountIn, amountOut);
-            }
-            token1.safeTransfer(msg.sender, transferAmount);
-        }
+        transferOnBurn(outputAsset, transferAmount);
     }
 
 
-    // priced in terms of asset0
+    // Get net asset value priced in terms of asset0
     function getNav() public view returns(uint256) {
         return getStakedBalance().add(getBufferBalance());
     }
@@ -170,18 +159,26 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         return 1;
     }
 
-    // Get balance in the pool
+    // Get total balance in the pool
     function getStakedBalance() public view returns (uint256) {
-        uint256 balance0 = token0.balanceOf(address(pool));
-        uint256 balance1 = token1.balanceOf(address(pool));
-        return balance0.add(balance1.mul(getToken1Price()));
+        (,,,,,,, uint128 liquidity ,,,,) = positionManager.positions(tokenId);
+        uint160 price = getPoolPrice();
+        (uint256 amount0, uint256 amount1) = 
+            LiquidityAmounts.getAmountsForLiquidity(price, priceLower, priceUpper, liquidity);
+        return amount0.add(amount1.mul(getToken1Price()));
     }
 
     // Get balance in xU3LP contract
     function getBufferBalance() public view returns (uint256) {
-        uint256 balance0 = (token0.balanceOf(address(this))).sub(withdrawableToken0Fees);
-        uint256 balance1 = (token1.balanceOf(address(this))).sub(withdrawableToken1Fees);
-        return balance0.add(balance1.mul(getToken1Price()));
+        int256 balance0 = int256(token0.balanceOf(address(this))) - int256(withdrawableToken0Fees);
+        int256 balance1 = int256(token1.balanceOf(address(this))) - int256(withdrawableToken1Fees);
+        if(balance0 < 0) balance0 = 0;
+        if(balance1 < 0) balance1 = 0;
+        return uint256(balance0).add(uint256(balance1).mul(getToken1Price()));
+    }
+
+    function getTargetBufferBalance() public view returns (uint256) {
+        return getNav().div(BUFFER_TARGET);
     }
 
     // Check how much xU3LP tokens will be minted
@@ -212,15 +209,14 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
 
     function _provideOrRemoveLiquidity() private {
         uint256 bufferBalance = getBufferBalance();
-        uint256 stakedBalance = getStakedBalance();
-        uint256 targetBalance = bufferBalance.add(stakedBalance).div(BUFFER_TARGET);
+        uint256 targetBalance = getTargetBufferBalance();
 
         if (bufferBalance > targetBalance) {
             uint256 amount = bufferBalance.sub(targetBalance);
             uint256 amount0 = amount.div(1 + getToken1Price());
             uint256 amount1 = amount0.mul(getToken1Price());
             _stake(amount0, amount1);
-        } else {
+        } else if (bufferBalance < targetBalance) {
             uint256 amount = targetBalance.sub(bufferBalance);
             uint256 amount0 = amount.div(1 + getToken1Price());
             uint256 amount1 = amount0.mul(getToken1Price());
@@ -229,49 +225,36 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     }
 
     // TODO: Handle cases when balances minted are different from requested
-    function _stake(uint256 _amount0, uint256 _amount1) private {
-        uint160 price = getPoolPrice();
-        uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
-            price,
-            priceLower,
-            priceUpper,
-            _amount0,
-            _amount1
-        );
-
-        pool.mint(
-            address(this),
-            tickLower,
-            tickUpper,
-            liquidityAmount,
-            abi.encode(msg.sender)
+    function _stake(uint256 amount0, uint256 amount1) private {
+        require(amount0 > 0 || amount1 > 0, "Cannot stake without sending tokens");
+        positionManager.increaseLiquidity(
+            tokenId,
+            amount0,
+            amount1,
+            amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
+            amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
+            block.timestamp.add(MINT_BURN_TIMEOUT)
         );
     }
 
     // TODO: Handle cases when balances burnt are different from requested
-    function _unstake(uint256 _amount0, uint256 _amount1) private {
+    function _unstake(uint256 amount0, uint256 amount1) private {
         uint160 price = getPoolPrice();
         uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
             price,
             priceLower,
             priceUpper,
-            _amount0,
-            _amount1
+            amount0.add(amount0.div(MINT_BURN_SLIPPAGE)),
+            amount1.add(amount1.div(MINT_BURN_SLIPPAGE))
         );
-
-        (uint256 amount0, uint256 amount1) = pool.burn(
-            tickLower,
-            tickUpper,
-            liquidityAmount
+        (uint256 _amount0, uint256 _amount1) = positionManager.decreaseLiquidity(
+            tokenId,
+            liquidityAmount,
+            amount0,
+            amount1,
+            block.timestamp.add(MINT_BURN_TIMEOUT)
         );
-
-        pool.collect(
-            address(this),
-            tickLower,
-            tickUpper,
-            uint128(amount0),
-            uint128(amount1)
-        );
+        positionManager.collect(tokenId, address(this), uint128(_amount0), uint128(_amount1));
     }
 
     // Collect fees
@@ -279,10 +262,9 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         uint128 requestAmount0 = type(uint128).max;
         uint128 requestAmount1 = type(uint128).max;
 
-        (uint256 collected0, uint256 collected1) = pool.collect(
+        (uint256 collected0, uint256 collected1) = positionManager.collect(
+            tokenId,
             address(this),
-            tickLower,
-            tickUpper,
             requestAmount0,
             requestAmount1
         );
@@ -291,6 +273,66 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         uint256 fee1 = _calculateFee(collected1, feeDivisors.claimFee);
         _incrementWithdrawableToken0Fees(fee0);
         _incrementWithdrawableToken1Fees(fee1);
+    }
+
+    /**
+     * Mint function which initializes the pool position
+     * Must be called before any liquidity can be deposited
+     */
+    function mintInitial(uint256 amount0, uint256 amount1) external onlyOwner {
+        require(amount0 > 0 || amount1 > 0, "Cannot mint without sending tokens");
+        if (amount0 > 0) {
+            token0.transferFrom(msg.sender, address(this), amount0);
+        }
+        if (amount1 > 0) {
+            token1.transferFrom(msg.sender, address(this), amount1);
+        }
+        (uint256 _tokenId,,,) = 
+        positionManager.mint(INonfungiblePositionManager.MintParams({
+            token0: address(token0),
+            token1: address(token1),
+            fee: POOL_FEE,
+            tickLower: tickLower,
+            tickUpper: tickUpper,
+            amount0Desired: amount0,
+            amount1Desired: amount1,
+            amount0Min: amount0.sub(amount0.div(100)),
+            amount1Min: amount1.sub(amount1.div(100)),
+            recipient: address(this),
+            deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+        }));
+        tokenId = _tokenId;
+        _mintInternal(amount0.add(amount1.mul(getToken1Price())));
+    }
+
+    /**
+     * Transfers asset amount when user calls burn() 
+     * If there's not enough balance of that asset, 
+     * triggers a Uniswap router swap to increase the balance
+     */
+    function transferOnBurn(uint8 outputAsset, uint256 transferAmount) private {
+        if(outputAsset == 0) {
+            uint256 balance0 = token0.balanceOf(address(this))
+                                        .sub(withdrawableToken0Fees);
+            
+            if(balance0 < transferAmount) {
+                // amounts could be changed to balance the tokens
+                uint256 amountIn = transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(balance0);
+                uint256 amountOut = transferAmount.add(1).sub(balance0);
+                swapToken1ForToken0(amountIn, amountOut);
+            }
+            token0.safeTransfer(msg.sender, transferAmount);
+        } else {
+            uint256 balance1 = token1.balanceOf(address(this))
+                                        .sub(withdrawableToken1Fees);
+
+            if(balance1 < transferAmount) {
+                uint256 amountIn = transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(balance1);
+                uint256 amountOut = transferAmount.add(1).sub(balance1);
+                swapToken0ForToken1(amountIn, amountOut);
+            }
+            token1.safeTransfer(msg.sender, transferAmount);
+        }
     }
 
     /*
@@ -399,23 +441,9 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         }));
     }
 
+    // Returns the current pool price
     function getPoolPrice() private view returns (uint160) {
         (uint160 sqrtRatioX96,,,,,,) = pool.slot0();
         return sqrtRatioX96;
-    }
-
-    function uniswapV3MintCallback(
-        uint256 amount0Owed,
-        uint256 amount1Owed,
-        bytes calldata /*data*/
-    ) external override {
-        require(msg.sender == address(pool));
-
-        if (amount0Owed > 0) {
-            token0.safeTransfer(msg.sender, amount0Owed);
-        }
-        if (amount1Owed > 0) {
-            token1.safeTransfer(msg.sender, amount1Owed);
-        }
     }
 }

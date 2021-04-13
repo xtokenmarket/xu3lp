@@ -1,5 +1,9 @@
 {
-  "name": "hardhat-project",
+  "name": "xU3LP - Uniswap V3 LP Fungible Token",
+  "author": {
+    "name" : "Ivan Zhelyazkov",
+    "email" : "ivan@xtoken.market"
+  },
   "devDependencies": {
     "@openzeppelin/hardhat-upgrades": "^1.6.0",
     "hardhat": "^2.1.2"
@@ -9,7 +13,7 @@
     "@openzeppelin/contracts": "3.4.1-solc-0.7-2",
     "@openzeppelin/contracts-upgradeable": "3.4.1-solc-0.7-2",
     "@uniswap/v3-core": "^1.0.0-rc.1",
-    "@uniswap/v3-periphery": "^1.0.0-beta.15",
+    "@uniswap/v3-periphery": "^1.0.0-beta.18",
     "ethers": "^5.1.0",
     "hardhat-deploy": "^0.7.2",
     "hardhat-deploy-ethers": "^0.3.0-beta.7"
