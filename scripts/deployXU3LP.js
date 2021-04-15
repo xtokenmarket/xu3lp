@@ -40,17 +40,18 @@ async function deployXU3LP() {
     const XU3LP = await ethers.getContractFactory("xU3LPStable");
     const xU3LP = await upgrades.deployProxy(XU3LP, ["xU3LP", lowTick, highTick, dai.address, usdc.address, 
                                           poolAddress, router.address, positionManager.address, 500, 500, 100]);
+    
 
     // approve xU3LP
     let decimal = Math.pow(10, 18);
     let decimals = bn(decimal.toString());
-    let approveAmount = bn(1000000).mul(decimals);
+    let approveAmount = bn(100000000000000).mul(decimals);
     await dai.approve(xU3LP.address, approveAmount);
     await usdc.approve(xU3LP.address, approveAmount);
 
     // mint initial - required to initialize the liquidity position 
     // and create the NFT representing it
-    let mintAmount = bn(10000).mul(decimals);
+    let mintAmount = bn(100000000).mul(decimals);
     await xU3LP.mintInitial(mintAmount, mintAmount);
     console.log('first mint success');
 

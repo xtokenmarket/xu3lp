@@ -13,13 +13,13 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import "@uniswap/v3-core/contracts/libraries/SqrtPriceMath.sol";
 
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import '@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol';
 import '@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol';
 
-import 'hardhat/console.sol';
-
+import './ABDKMath64x64.sol';
 
 contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable {
     using SafeMath for uint256;
@@ -31,7 +31,7 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     uint256 private constant SWAP_TIMEOUT = 100;
     uint256 private constant SWAP_SLIPPAGE = 100; // 1%
     uint256 private constant MINT_BURN_TIMEOUT = 1000;
-    uint256 private constant MINT_BURN_SLIPPAGE = 1000;
+    uint256 private constant MINT_BURN_SLIPPAGE = 100; // 1%
     uint24 private constant POOL_FEE = 500;
 
     int24 tickLower;
@@ -177,8 +177,34 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         return uint256(balance0).add(uint256(balance1).mul(getToken1Price()));
     }
 
+    // Get wanted xU3LP contract balance - 5% of NAV
     function getTargetBufferBalance() public view returns (uint256) {
         return getNav().div(BUFFER_TARGET);
+    }
+
+    // Get token balances in xU3LP contract
+    function getBufferTokenBalance() public view returns (uint256 amount0, uint256 amount1) {
+        int256 balance0 = int256(token0.balanceOf(address(this))) - int256(withdrawableToken0Fees);
+        int256 balance1 = int256(token1.balanceOf(address(this))) - int256(withdrawableToken1Fees);
+        if(balance0 < 0) balance0 = 0;
+        if(balance1 < 0) balance1 = 0;
+        amount0 = uint256(balance0);
+        amount1 = uint256(balance1);
+    }
+
+    // Get token balances in the pool
+    function getPoolTokenBalance() private view returns (uint256 amount0, uint256 amount1) {
+        (,,,,,,, uint128 liquidity ,,,,) = positionManager.positions(tokenId);
+        uint160 price = getPoolPrice();
+        (amount0, amount1) = 
+            LiquidityAmounts.getAmountsForLiquidity(price, priceLower, priceUpper, liquidity);
+    }
+
+    function getTargetBufferTokenBalance() public view returns (uint256 amount0, uint256 amount1) {
+        (uint256 bufferAmount0, uint256 bufferAmount1) = getBufferTokenBalance();
+        (uint256 poolAmount0, uint256 poolAmount1) = getPoolTokenBalance();
+        amount0 = bufferAmount0.add(poolAmount0).div(BUFFER_TARGET);
+        amount1 = bufferAmount1.add(poolAmount1).div(BUFFER_TARGET);
     }
 
     // Check how much xU3LP tokens will be minted
@@ -210,23 +236,22 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     function _provideOrRemoveLiquidity() private {
         uint256 bufferBalance = getBufferBalance();
         uint256 targetBalance = getTargetBufferBalance();
+        (uint256 bufferToken0Balance, uint256 bufferToken1Balance) = getBufferTokenBalance();
+        (uint256 poolToken0Balance, uint256 poolToken1Balance) = getPoolTokenBalance();
+        (uint256 targetToken0Balance, uint256 targetToken1Balance) = getTargetBufferTokenBalance();
+
+        uint256 _amount0 = subAbs(bufferToken0Balance, targetToken0Balance);
+        uint256 _amount1 = subAbs(bufferToken1Balance, targetToken1Balance);
+        (uint256 amount0, uint256 amount1) = checkIfAmountsMatchAndSwap(_amount0, _amount1);
 
         if (bufferBalance > targetBalance) {
-            uint256 amount = bufferBalance.sub(targetBalance);
-            uint256 amount0 = amount.div(1 + getToken1Price());
-            uint256 amount1 = amount0.mul(getToken1Price());
             _stake(amount0, amount1);
         } else if (bufferBalance < targetBalance) {
-            uint256 amount = targetBalance.sub(bufferBalance);
-            uint256 amount0 = amount.div(1 + getToken1Price());
-            uint256 amount1 = amount0.mul(getToken1Price());
             _unstake(amount0, amount1);
         }
     }
 
-    // TODO: Handle cases when balances minted are different from requested
     function _stake(uint256 amount0, uint256 amount1) private {
-        require(amount0 > 0 || amount1 > 0, "Cannot stake without sending tokens");
         positionManager.increaseLiquidity(
             tokenId,
             amount0,
@@ -237,21 +262,20 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         );
     }
 
-    // TODO: Handle cases when balances burnt are different from requested
     function _unstake(uint256 amount0, uint256 amount1) private {
         uint160 price = getPoolPrice();
         uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
             price,
             priceLower,
             priceUpper,
-            amount0.add(amount0.div(MINT_BURN_SLIPPAGE)),
-            amount1.add(amount1.div(MINT_BURN_SLIPPAGE))
+            amount0,
+            amount1
         );
         (uint256 _amount0, uint256 _amount1) = positionManager.decreaseLiquidity(
             tokenId,
             liquidityAmount,
-            amount0,
-            amount1,
+            amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
+            amount1.sub(amount0.div(MINT_BURN_SLIPPAGE)),
             block.timestamp.add(MINT_BURN_TIMEOUT)
         );
         positionManager.collect(tokenId, address(this), uint128(_amount0), uint128(_amount1));
@@ -273,6 +297,35 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         uint256 fee1 = _calculateFee(collected1, feeDivisors.claimFee);
         _incrementWithdrawableToken0Fees(fee0);
         _incrementWithdrawableToken1Fees(fee1);
+    }
+
+    /**
+     * Check if token amounts match before attempting mint() or burn()
+     * Uniswap contract requires deposits at a precise token ratio
+     * If they don't match, swap the tokens so as to deposit as much as possible
+     */
+    function checkIfAmountsMatchAndSwap(uint256 amount0ToMint, uint256 amount1ToMint) 
+                                        private returns (uint256 amount0, uint256 amount1) {
+        uint160 price = getPoolPrice();
+        uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
+            price,
+            priceLower,
+            priceUpper,
+            amount0ToMint,
+            amount1ToMint
+        );
+        (uint256 amount0Minted, uint256 amount1Minted) = LiquidityAmounts.getAmountsForLiquidity(
+            price,
+            priceLower,
+            priceUpper,
+            liquidityAmount
+        );
+        if(amount0ToMint.div(10 ** 18) != amount0Minted.div(10 ** 18) || 
+            amount1ToMint.div(10 ** 18) != amount1Minted.div(10 ** 18)) {
+            (amount0, amount1) = restoreTokenRatios(amount0ToMint, amount1ToMint, amount0Minted, amount1Minted);
+        } else {
+            (amount0, amount1) = (amount0ToMint, amount1ToMint);
+        }
     }
 
     /**
@@ -316,7 +369,6 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
                                         .sub(withdrawableToken0Fees);
             
             if(balance0 < transferAmount) {
-                // amounts could be changed to balance the tokens
                 uint256 amountIn = transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(balance0);
                 uint256 amountOut = transferAmount.add(1).sub(balance0);
                 swapToken1ForToken0(amountIn, amountOut);
@@ -441,9 +493,76 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         }));
     }
 
+    /**
+     * Swap tokens in xU3LP so as to keep a ratio which is required for depositing in the pool
+     */
+    function restoreTokenRatios(uint256 amount0ToMint, uint256 amount1ToMint, 
+                                uint256 amount0Minted, uint256 amount1Minted) 
+                                private returns (uint256 amount0, uint256 amount1) {
+        uint256 swapAmount = calculateSwapAmount(amount0ToMint, amount1ToMint, amount0Minted, amount1Minted);
+        if(swapAmount == 0) {
+            (amount0, amount1) = (amount0ToMint, amount1ToMint);
+        }
+
+        if(amount0Minted.div(10 ** 18) < amount1Minted.div(10 ** 18)) {
+            swapToken0ForToken1(swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)), swapAmount);
+            amount0 = amount0ToMint.sub(swapAmount);
+            amount1 = amount1ToMint.add(swapAmount);
+        } else if(amount0Minted.div(10 ** 18) > amount1Minted.div(10 ** 18)) {
+            swapToken1ForToken0(swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)), swapAmount);
+            amount0 = amount0ToMint.add(swapAmount);
+            amount1 = amount1ToMint.sub(swapAmount);
+        } else if(amount0ToMint > amount1ToMint) {
+            swapToken0ForToken1(swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)), swapAmount);
+            amount0 = amount0ToMint.sub(swapAmount);
+            amount1 = amount1ToMint.add(swapAmount);
+        } else if(amount0ToMint < amount1ToMint) {
+            swapToken1ForToken0(swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)), swapAmount);
+            amount0 = amount0ToMint.add(swapAmount);
+            amount1 = amount1ToMint.sub(swapAmount);
+        }
+    }
+
+
+    /**
+     * Helper function to calculate how much to swap to deposit / withdraw
+     * In Uni Pool to satisfy the required buffer balance in xU3LP of 5%
+     */
+    function calculateSwapAmount(uint256 amount0ToMint, uint256 amount1ToMint, 
+                                uint256 amount0Minted, uint256 amount1Minted) 
+                                private view returns (uint256 swapAmount) {
+        (uint256 mul1, uint256 mul2) = (0, 0);
+        if(amount0Minted > amount1Minted) {
+            // n = X * Z - Y * T / Z + T
+            mul1 = amount0ToMint.mul(amount0Minted);
+            mul2 = amount1ToMint.mul(amount1Minted);
+        } else {
+            // n = X * T - Y * Z / Z + T
+            mul1 = amount0ToMint.mul(amount1Minted);
+            mul2 = amount1ToMint.mul(amount0Minted);
+        }
+        int256 _sub1 = int256(mul1) - int256(mul2);
+        uint256 sub1 = _sub1 < 0 ? uint256(-_sub1) : uint256(_sub1);
+        uint256 add1 = amount0Minted.add(amount1Minted);
+
+        // Sometimes numbers are too big to be fit in ABDK's div 128-bit representation
+        // So calculate the root of the equation and then raise to the 2nd power
+        uint128 sub1sqrt = ABDKMath64x64.sqrtu(sub1);
+        uint128 add1sqrt = ABDKMath64x64.sqrtu(add1);
+        int128 nRatio = ABDKMath64x64.divu(sub1sqrt, add1sqrt);
+        int64 n = ABDKMath64x64.toInt(nRatio);
+        swapAmount = uint256(n) ** 2;
+    }
+
     // Returns the current pool price
     function getPoolPrice() private view returns (uint160) {
         (uint160 sqrtRatioX96,,,,,,) = pool.slot0();
         return sqrtRatioX96;
+    }
+
+    // Subtract two numbers and return absolute value
+    function subAbs(uint256 amount0, uint256 amount1) private pure returns (uint256) {
+        int256 result = int256(amount0) - int256(amount1);
+        return result < 0 ? uint256(-result) : uint256(result);
     }
 }
