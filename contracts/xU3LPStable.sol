@@ -13,7 +13,6 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
-import "@uniswap/v3-core/contracts/libraries/SqrtPriceMath.sol";
 
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import '@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol';
@@ -32,6 +31,7 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     uint256 private constant SWAP_SLIPPAGE = 100; // 1%
     uint256 private constant MINT_BURN_TIMEOUT = 1000;
     uint256 private constant MINT_BURN_SLIPPAGE = 100; // 1%
+    uint32 private constant TWAP_SECONDS = 3600; // How many seconds ago to check twap
     uint24 private constant POOL_FEE = 500;
 
     int24 tickLower;
@@ -115,7 +115,7 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         } else {
             token1.safeTransferFrom(msg.sender, address(this), amount);
             fee = _calculateFee(amount, feeDivisors.mintFee);
-            _mintInternal(amount.mul(getToken1Price()).sub(fee));
+            _mintInternal(getAmountInAsset0Terms(amount).sub(fee));
             _incrementWithdrawableToken1Fees(fee);
         }
     }
@@ -131,9 +131,8 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
             proRataBalance = (totalBalance.mul(amount)).div(totalSupply());
         } else {
             proRataBalance = (totalBalance
-                            .mul(amount
-                            .div(getToken1Price())))
-                            .div(totalSupply());
+                            .mul(getAmountInAsset1Terms(amount))
+                            .div(totalSupply()));
         }
 
         require(proRataBalance <= bufferBalance, "Insufficient exit liquidity");
@@ -155,8 +154,19 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         return getStakedBalance().add(getBufferBalance());
     }
 
-    function getToken1Price() public pure returns(uint256){
-        return 1;
+    // Get asset 1 twap price for the period of [now - TWAP_SECONDS, now]
+    function getAsset1Price() public view returns(int128) {
+        return ABDKMath64x64.inv(getAsset0Price());
+    }
+
+    // Returns amount in terms of asset0
+    function getAmountInAsset0Terms(uint256 amount) public view returns(uint256) {
+        return ABDKMath64x64.mulu(getAsset1Price(), amount);
+    }
+
+    // Returns amount in terms of asset1
+    function getAmountInAsset1Terms(uint256 amount) public view returns(uint256) {
+        return ABDKMath64x64.mulu(getAsset0Price(), amount);
     }
 
     // Get total balance in the pool
@@ -165,7 +175,7 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         uint160 price = getPoolPrice();
         (uint256 amount0, uint256 amount1) = 
             LiquidityAmounts.getAmountsForLiquidity(price, priceLower, priceUpper, liquidity);
-        return amount0.add(amount1.mul(getToken1Price()));
+        return amount0.add(getAmountInAsset0Terms(amount1));
     }
 
     // Get balance in xU3LP contract
@@ -173,8 +183,8 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
         int256 balance0 = int256(token0.balanceOf(address(this))) - int256(withdrawableToken0Fees);
         int256 balance1 = int256(token1.balanceOf(address(this))) - int256(withdrawableToken1Fees);
         if(balance0 < 0) balance0 = 0;
-        if(balance1 < 0) balance1 = 0;
-        return uint256(balance0).add(uint256(balance1).mul(getToken1Price()));
+        if(balance1 < 0) balance1 = 0;      
+        return uint256(balance0).add(getAmountInAsset0Terms(uint256(balance1)));
     }
 
     // Get wanted xU3LP contract balance - 5% of NAV
@@ -193,13 +203,14 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     }
 
     // Get token balances in the pool
-    function getPoolTokenBalance() private view returns (uint256 amount0, uint256 amount1) {
+    function getPoolTokenBalance() public view returns (uint256 amount0, uint256 amount1) {
         (,,,,,,, uint128 liquidity ,,,,) = positionManager.positions(tokenId);
         uint160 price = getPoolPrice();
         (amount0, amount1) = 
             LiquidityAmounts.getAmountsForLiquidity(price, priceLower, priceUpper, liquidity);
     }
 
+    // Get wanted xU3LP contract token balance - 5% of NAV
     function getTargetBufferTokenBalance() public view returns (uint256 amount0, uint256 amount1) {
         (uint256 bufferAmount0, uint256 bufferAmount1) = getBufferTokenBalance();
         (uint256 poolAmount0, uint256 poolAmount1) = getPoolTokenBalance();
@@ -355,7 +366,7 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
             deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
         }));
         tokenId = _tokenId;
-        _mintInternal(amount0.add(amount1.mul(getToken1Price())));
+        _mintInternal(amount0.add(getAmountInAsset0Terms(amount1)));
     }
 
     /**
@@ -495,6 +506,7 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
 
     /**
      * Swap tokens in xU3LP so as to keep a ratio which is required for depositing in the pool
+     * @dev TODO: Handle not enough balances for swap in xU3LP
      */
     function restoreTokenRatios(uint256 amount0ToMint, uint256 amount1ToMint, 
                                 uint256 amount0Minted, uint256 amount1Minted) 
@@ -558,6 +570,67 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     function getPoolPrice() private view returns (uint160) {
         (uint160 sqrtRatioX96,,,,,,) = pool.slot0();
         return sqrtRatioX96;
+    }
+
+    // Returns the latest oracle observation time
+    function getObservationTime() private view returns(uint32) {
+        (,, uint16 observationIndex,,,,) = pool.slot0();
+        (uint32 observationTime,,,) = pool.observations(observationIndex);
+        return observationTime;
+    }
+
+    /**
+        Get asset 0 twap price for the period of [now - TWAP_SECONDS, now]
+     */
+    function getAsset0Price() public view returns (int128) {
+        uint32[] memory secondsArray = new uint32[](2);
+        secondsArray[0] = TWAP_SECONDS;
+        secondsArray[1] = 0;
+        uint32 observationTime = getObservationTime();
+        uint32 currTimestamp = uint32(block.timestamp);
+
+        // If there are no observations from TWAP_SECONDS ago
+        // return price 1
+        if(!lte(currTimestamp,
+                observationTime,
+                currTimestamp - TWAP_SECONDS)) {
+            return ABDKMath64x64.fromInt(1);
+        }
+        (int56[] memory prices, ) = pool.observe(secondsArray);
+
+        // Formula is
+        // 1.0001 ^ (currentPrice - pastPrice) / secondsAgo
+        int256 currentPrice = int256(prices[0]);
+        int256 pastPrice = int256(prices[1]);
+
+        int256 diff = currentPrice - pastPrice;
+        uint256 priceDiff = diff < 0 ? uint256(-diff) : uint256(diff);
+
+        int128 power = ABDKMath64x64.divu(10000, 10001);
+        int128 _fraction = ABDKMath64x64.divu(priceDiff, uint256(TWAP_SECONDS));
+        uint256 fraction = uint256(ABDKMath64x64.toUInt(_fraction));
+
+        int128 twap = ABDKMath64x64.pow(power, fraction);
+
+        // This is necessary because we cannot call .pow on unsigned integers
+        // And thus when asset0Price > asset1Price we need to reverse the value
+        twap = diff < 0 ? ABDKMath64x64.inv(twap) : twap;
+        return twap;
+    }
+
+    /// comparator for 32-bit timestamps
+    /// @return bool Whether a <= b
+    function lte(
+        uint32 time,
+        uint32 a,
+        uint32 b
+    ) private pure returns (bool) {
+        if (a <= time && b <= time) return a <= b;
+
+        uint256 aAdjusted = a > time ? a : a + 2**32;
+        uint256 bAdjusted = b > time ? b : b + 2**32;
+
+        return aAdjusted <= bAdjusted;
     }
 
     // Subtract two numbers and return absolute value

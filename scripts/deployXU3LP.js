@@ -1,5 +1,5 @@
 const { ethers, upgrades } = require('hardhat');
-const { deploy, deployArgs, getBalance, bn } = require('./helpers');
+const { deploy, deployArgs, getBalance, getPriceInX96Format, bn } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =
@@ -22,7 +22,7 @@ async function deployXU3LP() {
     const lowTick = -60;
     const highTick = 60;
     // Price = 1
-    const price = bn('79228162514264337593543950336');
+    const price = getPriceInX96Format(1);
 
     const TokenDescriptor = new ethers.ContractFactory(NFTPositionDescriptor.abi, NFTPositionDescriptor.bytecode, signers[0]);
     const PositionManager = new ethers.ContractFactory(NFTPositionManager.abi, NFTPositionManager.bytecode, signers[0]);
@@ -105,9 +105,9 @@ async function deployXU3LP() {
     await getBalance(dai, usdc, poolAddress);
 
     // burning - triggering swap (not enough DAI balance)
-    burnAmount = bn(1500).mul(decimals);
+    burnAmount = bn(1000000).mul(decimals);
     await xU3LP.burn(0, burnAmount);
-    console.log('burning 1500 DAI successful');
+    console.log('burning 1000000 DAI successful');
     await getBalance(dai, usdc, xU3LP.address);
     await getBalance(dai, usdc, poolAddress);
 

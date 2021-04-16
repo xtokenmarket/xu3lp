@@ -1,8 +1,8 @@
 {
   "name": "xU3LP - Uniswap V3 LP Fungible Token",
   "author": {
-    "name" : "Ivan Zhelyazkov",
-    "email" : "ivan@xtoken.market"
+    "name": "Ivan Zhelyazkov",
+    "email": "ivan@xtoken.market"
   },
   "devDependencies": {
     "@openzeppelin/hardhat-upgrades": "^1.6.0",
