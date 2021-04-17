@@ -20,6 +20,8 @@ import '@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol';
 
 import './ABDKMath64x64.sol';
 
+import 'hardhat/console.sol';
+
 contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, PausableUpgradeable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -135,7 +137,10 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
                             .div(totalSupply()));
         }
 
-        require(proRataBalance <= bufferBalance, "Insufficient exit liquidity");
+        // Add swap slippage to the calculations
+        uint256 proRataBalanceWithSlippage = proRataBalance.add(proRataBalance.div(SWAP_SLIPPAGE));
+
+        require(proRataBalanceWithSlippage <= bufferBalance, "Insufficient exit liquidity");
         super._burn(msg.sender, amount);
 
         uint256 fee = _calculateFee(proRataBalance, feeDivisors.burnFee);
@@ -372,26 +377,28 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     /**
      * Transfers asset amount when user calls burn() 
      * If there's not enough balance of that asset, 
-     * triggers a Uniswap router swap to increase the balance
+     * triggers a router swap to increase the balance
+     * keep token ratio in xU3LP at 50:50 after swapping
      */
     function transferOnBurn(uint8 outputAsset, uint256 transferAmount) private {
+        (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
         if(outputAsset == 0) {
-            uint256 balance0 = token0.balanceOf(address(this))
-                                        .sub(withdrawableToken0Fees);
-            
             if(balance0 < transferAmount) {
                 uint256 amountIn = transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(balance0);
-                uint256 amountOut = transferAmount.add(1).sub(balance0);
+                uint256 amountOut = transferAmount.sub(balance0);
+                uint256 balanceFactor = sub0(balance1, amountOut).div(2);
+                amountIn = amountIn.add(balanceFactor);
+                amountOut = amountOut.add(balanceFactor);
                 swapToken1ForToken0(amountIn, amountOut);
             }
             token0.safeTransfer(msg.sender, transferAmount);
-        } else {
-            uint256 balance1 = token1.balanceOf(address(this))
-                                        .sub(withdrawableToken1Fees);
-
+        } else if(outputAsset == 1) {
             if(balance1 < transferAmount) {
                 uint256 amountIn = transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(balance1);
-                uint256 amountOut = transferAmount.add(1).sub(balance1);
+                uint256 amountOut = transferAmount.sub(balance1);
+                uint256 balanceFactor = sub0(balance0, amountOut).div(2);
+                amountIn = amountIn.add(balanceFactor);
+                amountOut = amountOut.add(balanceFactor);
                 swapToken0ForToken1(amountIn, amountOut);
             }
             token1.safeTransfer(msg.sender, transferAmount);
@@ -637,5 +644,11 @@ contract xU3LPStable is Initializable, ERC20Upgradeable, OwnableUpgradeable, Pau
     function subAbs(uint256 amount0, uint256 amount1) private pure returns (uint256) {
         int256 result = int256(amount0) - int256(amount1);
         return result < 0 ? uint256(-result) : uint256(result);
+    }
+
+    // Subtract two numbers and return 0 if result is < 0
+    function sub0(uint256 amount0, uint256 amount1) private pure returns (uint256) {
+        int256 result = int256(amount0) - int256(amount1);
+        return result < 0 ? 0 : uint256(result);
     }
 }

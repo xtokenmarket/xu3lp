@@ -72,9 +72,12 @@ async function testTWAP() {
     // Mint and burn at asset 0 price = 1
     console.log('\n---- Mint and burn at asset 0 price = 1 ----\n')
 
+    // Mint some balance so as to have left in the contract when burning
+    mintAmount = bnDecimal(1000000);
+    await xU3LP.mintWithToken(0, mintAmount);
+
     // Mint at equal token proportion
     // Mint 1 000 000 tokens
-    mintAmount = bnDecimal(1000000);
     await xU3LP.connect(user1).mintWithToken(0, mintAmount);
     let xU3LPbalance = await getXU3LPBalance(xU3LP, user1.address);
     console.log('balance after minting 1M DAI:');
@@ -228,38 +231,6 @@ async function testTWAP() {
                                   getNumberNoDecimals(poolBalance.amount1), 'USDC');
 
     return;
-
-    // minting
-    mintAmount = bnDecimal(10000);
-    await xU3LP.mintWithToken(0, mintAmount);
-    await xU3LP.mintWithToken(1, mintAmount);
-    console.log('minting 10 000 DAI and USDC successful');
-
-    await getBalance(dai, usdc, xU3LP.address);
-    await getBalance(dai, usdc, poolAddress);
-
-    // let xU3LPbalance = await getXU3LPBalance(xU3LP, admin);
-    // console.log('xU3LP balance:', xU3LPbalance);
-
-    // rebalance
-    await xU3LP.rebalance();
-    console.log('rebalance successful');
-
-    await getBalance(dai, usdc, xU3LP.address);
-    await getBalance(dai, usdc, poolAddress);
-
-    // burning
-    burnAmount = bnDecimal(100);
-    await xU3LP.burn(0, burnAmount);
-    console.log('burning 100 DAI successful');
-    await getBalance(dai, usdc, xU3LP.address);
-    await getBalance(dai, usdc, poolAddress);
-
-    burnAmount = bnDecimal(300);
-    await xU3LP.burn(1, burnAmount);
-    console.log('burning 300 USDC successful');
-    await getBalance(dai, usdc, xU3LP.address);
-    await getBalance(dai, usdc, poolAddress);
   }
 
 testTWAP()
