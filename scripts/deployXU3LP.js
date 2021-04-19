@@ -1,5 +1,5 @@
 const { ethers, upgrades } = require('hardhat');
-const { deploy, deployArgs, getBalance, getPriceInX96Format, bn } = require('./helpers');
+const { deploy, deployArgs, getBalance, getPriceInX96Format, bn, bnDecimal } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =
@@ -14,6 +14,7 @@ async function deployXU3LP() {
 
     const dai = await deployArgs('DAI', 'DAI', 'DAI');
     const usdc = await deployArgs('USDC', 'USDC', 'USDC');
+    const weth = await deployArgs('WETH', 'WETH', 'WETH');
 
     let Factory = new ethers.ContractFactory(UniFactory.abi, UniFactory.bytecode, signers[0]);
     const uniFactory = await Factory.deploy();
@@ -26,8 +27,8 @@ async function deployXU3LP() {
 
     const TokenDescriptor = new ethers.ContractFactory(NFTPositionDescriptor.abi, NFTPositionDescriptor.bytecode, signers[0]);
     const PositionManager = new ethers.ContractFactory(NFTPositionManager.abi, NFTPositionManager.bytecode, signers[0]);
-    const tokenDescriptor = await TokenDescriptor.deploy(dai.address);
-    const positionManager = await PositionManager.deploy(uniFactory.address, dai.address, tokenDescriptor.address);
+    const tokenDescriptor = await TokenDescriptor.deploy(weth.address);
+    const positionManager = await PositionManager.deploy(uniFactory.address, weth.address, tokenDescriptor.address);
     console.log('deployed position manager');
 
     await positionManager.createAndInitializePoolIfNecessary(dai.address, usdc.address, 500, price);
@@ -35,7 +36,7 @@ async function deployXU3LP() {
     console.log('pool deployed');
 
     const Router = new ethers.ContractFactory(swapRouter.abi, swapRouter.bytecode, signers[0]);
-    const router = await Router.deploy(uniFactory.address, dai.address);
+    const router = await Router.deploy(uniFactory.address, weth.address);
     
     const XU3LP = await ethers.getContractFactory("xU3LPStable");
     const xU3LP = await upgrades.deployProxy(XU3LP, ["xU3LP", lowTick, highTick, dai.address, usdc.address, 
@@ -45,13 +46,13 @@ async function deployXU3LP() {
     // approve xU3LP
     let decimal = Math.pow(10, 18);
     let decimals = bn(decimal.toString());
-    let approveAmount = bn(100000000000000).mul(decimals);
+    let approveAmount = bnDecimal(100000000000000);
     await dai.approve(xU3LP.address, approveAmount);
     await usdc.approve(xU3LP.address, approveAmount);
 
-    // mint initial - required to initialize the liquidity position 
+    // mint initial - required to initialize the liquidity position
     // and create the NFT representing it
-    let mintAmount = bn(100000000).mul(decimals);
+    let mintAmount = bnDecimal(100000000);
     await xU3LP.mintInitial(mintAmount, mintAmount);
     console.log('first mint success');
 
@@ -59,7 +60,8 @@ async function deployXU3LP() {
     console.log('staked balance in pool:', stakedBalance.div(decimals).toString());
 
     // minting
-    mintAmount = bn(10000).mul(decimals);
+    mintAmount = bnDecimal(10000);
+
     await xU3LP.mintWithToken(0, mintAmount);
     await xU3LP.mintWithToken(1, mintAmount);
     console.log('minting 10 000 DAI and USDC successful');
@@ -75,13 +77,13 @@ async function deployXU3LP() {
     await getBalance(dai, usdc, poolAddress);
 
     // burning
-    let burnAmount = bn(100).mul(decimals);
+    let burnAmount = bnDecimal(100);
     await xU3LP.burn(0, burnAmount);
     console.log('burning 100 DAI successful');
     await getBalance(dai, usdc, xU3LP.address);
     await getBalance(dai, usdc, poolAddress);
 
-    burnAmount = bn(300).mul(decimals);
+    burnAmount = bnDecimal(300);
     await xU3LP.burn(1, burnAmount);
     console.log('burning 300 USDC successful');
     await getBalance(dai, usdc, xU3LP.address);
@@ -105,17 +107,21 @@ async function deployXU3LP() {
     await getBalance(dai, usdc, poolAddress);
 
     // burning - triggering swap (not enough DAI balance)
-    burnAmount = bn(1000000).mul(decimals);
+    burnAmount = bnDecimal(9890000);
     await xU3LP.burn(0, burnAmount);
-    console.log('burning 1000000 DAI successful');
+    console.log('burning 9890000 DAI successful');
     await getBalance(dai, usdc, xU3LP.address);
     await getBalance(dai, usdc, poolAddress);
 
     await xU3LP.rebalance();
     console.log('rebalance successful');
 
-    await getBalance(dai, usdc, xU3LP.address);
-    await getBalance(dai, usdc, poolAddress);
+    let bufferBalance = await getBalance(dai, usdc, xU3LP.address);
+    let poolBalance = await getBalance(dai, usdc, poolAddress);
+
+    let contractPoolTokenRatio = (bufferBalance.dai + bufferBalance.usdc + poolBalance.dai + poolBalance.usdc) / 
+                                  (bufferBalance.dai + bufferBalance.usdc);
+    console.log('contract : pool token ratio:', (100 / contractPoolTokenRatio.toFixed(2)).toFixed(2) + '%');
 
     // Get fees
     let feesDAI = await xU3LP.withdrawableToken0Fees();

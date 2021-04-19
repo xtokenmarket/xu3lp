@@ -1,12 +1,19 @@
 {
-  "name": "xU3LP - Uniswap V3 LP Fungible Token",
+  "name": "xU3LP-Uniswap-V3-LP-Fungible-Token",
   "author": {
     "name": "Ivan Zhelyazkov",
     "email": "ivan@xtoken.market"
   },
+  "scripts": {
+    "start": "hardhat run scripts/deployXU3LP.js",
+    "test": "hardhat run test",
+    "prettier": "prettier --write 'contracts/**/*.sol'"
+  },
   "devDependencies": {
     "@openzeppelin/hardhat-upgrades": "^1.6.0",
-    "hardhat": "^2.1.2"
+    "hardhat": "^2.1.2",
+    "prettier": "^2.2.1",
+    "prettier-plugin-solidity": "^1.0.0-beta.9"
   },
   "dependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.2",

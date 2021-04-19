@@ -27,7 +27,7 @@ async function getBalance(token0, token1, address) {
     let decimal = Math.pow(10, 18);
     let decimals = new ethers.BigNumber.from(decimal.toString());
     console.log('dai balance:', daiBalance.div(decimals).toString(), 'usdc balance:', usdcBalance.div(decimals).toString());
-    return {dai: daiBalance.toString(), usdc: usdcBalance.toString()};
+    return {dai: daiBalance.div(decimals).toNumber(), usdc: usdcBalance.div(decimals).toNumber()};
   }
 
   /**
