@@ -1,5 +1,5 @@
 const { ethers, upgrades } = require('hardhat');
-const { deploy, deployArgs, getBalance, getPriceInX96Format, bn, bnDecimal } = require('./helpers');
+const { deployArgs, getBalance, getPriceInX96Format, bn, bnDecimal } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =

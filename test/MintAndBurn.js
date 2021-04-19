@@ -1,48 +1,59 @@
 const assert = require('assert');
-const { deploymentFixture } = require('./fixture');
-const { getBalance, getXU3LPBalance } = require('../scripts/helpers');
+const { deploymentFixture } = require('./fixtureNew');
+const { getXU3LPBalance, bn } = require('../scripts/helpers');
 
-// Rebalance tests for xU3LP
+// Mint and burn tests for xU3LP
 describe('Contract: xU3LP', async () => {
-  let dai, usdc, pool, xU3LP, admin;
-  let bufferPercentage = 5;
+  let xU3LP, user;
 
   beforeEach(async () => {
-		({ dai, usdc, pool, xU3LP } = await deploymentFixture());
+		({ xU3LP } = await deploymentFixture());
     const signers = await ethers.getSigners();
-    admin = signers[0].address;
+    user = signers[1];
   })
 
   describe('Mint and burn', async () => {
     it('mint xu3lp tokens to user', async () => {
-        let amount = 10000;
-        await xU3LP.mintWithToken(0, amount);
-        let balance = await getXU3LPBalance(xU3LP, admin);
+        let amount = 1000000;
+        await xU3LP.connect(user).mintWithToken(0, amount);
+        let balance = await getXU3LPBalance(xU3LP, user.address);
         let feeDivisors = await xU3LP.feeDivisors();
         let mintFee = feeDivisors.mintFee;
 
-        let actualBalance = amount - (amount / mintFee);
+        let amountWithoutFees = amount - (amount / mintFee);
 
-        assert(balance == (actualBalance));
+        const nav = await xU3LP.getNav();
+        const totalSupply = await xU3LP.totalSupply();
+        let calculatedBalance = bn(amountWithoutFees).mul(totalSupply).div(nav).toNumber();
+
+        // math operations in solidity (rounded down) vs ethersjs bignumber difference (rounded up)
+        calculatedBalance -= 1;
+
+        assert(balance.toNumber() == calculatedBalance);
     })
 
     it('burn xu3lp tokens from user', async () => {
-      let mintAmount = 10000;
-      let burnAmount = 100;
-      await xU3LP.mintWithToken(0, mintAmount);
+      let mintAmount = 1000000;
+      let burnAmount = 100000;
+      await xU3LP.connect(user).mintWithToken(0, mintAmount);
 
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.connect(user).burn(0, burnAmount);
       
       let feeDivisors = await xU3LP.feeDivisors();
       let mintFee = feeDivisors.mintFee;
-      let burnFee = feeDivisors.burnFee;
 
-      let actualBalance = new Number(
-                          (mintAmount - (mintAmount / mintFee) - 
-                          burnAmount - (burnAmount / burnFee))).toFixed(0);
+      let balance = await getXU3LPBalance(xU3LP, user.address);
+      let amountWithoutFees = new Number(
+                          ((mintAmount - (mintAmount / mintFee)) -
+                          (burnAmount))).toFixed(0);
+      const nav = await xU3LP.getNav();
+      const totalSupply = await xU3LP.totalSupply();
+      let calculatedBalance = bn(amountWithoutFees).mul(nav).div(totalSupply).toNumber();
 
-      let balance = await getXU3LPBalance(xU3LP, admin);
-      assert(balance == actualBalance)
+      // math operations in solidity (rounded down) vs ethersjs bignumber difference (rounded up)
+      calculatedBalance -= 1;
+
+      assert(balance.toNumber() == calculatedBalance)
     })
   })
 })
