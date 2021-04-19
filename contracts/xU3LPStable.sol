@@ -636,6 +636,7 @@ contract xU3LPStable is
             );
         if (swapAmount == 0) {
             (amount0, amount1) = (amount0ToMint, amount1ToMint);
+            return (amount0, amount1);
         }
 
         if (
@@ -684,7 +685,7 @@ contract xU3LPStable is
         uint256 amount1ToMint,
         uint256 amount0Minted,
         uint256 amount1Minted
-    ) private view returns (uint256 swapAmount) {
+    ) private pure returns (uint256 swapAmount) {
         (uint256 mul1, uint256 mul2) = (0, 0);
         if (amount0Minted > amount1Minted) {
             // n = X * Z - Y * T / Z + T
