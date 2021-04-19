@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { deploymentFixture } = require('./fixtureNew');
+const { deploymentFixture } = require('./fixture');
 const { getXU3LPBalance, bn } = require('../scripts/helpers');
 
 // Mint and burn tests for xU3LP

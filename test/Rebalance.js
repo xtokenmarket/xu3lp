@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { deploymentFixture } = require('./fixtureNew');
+const { deploymentFixture } = require('./fixture');
 const { getBalance, bn, bnDecimal, getNumberNoDecimals } = require('../scripts/helpers');
 
 // Rebalance tests for xU3LP
