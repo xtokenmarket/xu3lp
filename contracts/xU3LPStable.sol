@@ -639,20 +639,17 @@ contract xU3LPStable is
             return (amount0, amount1);
         }
 
-        if (
-            amount0Minted.div(TOKEN_0_DECIMALS) <
-            amount1Minted.div(TOKEN_1_DECIMALS)
-        ) {
+        uint256 mul1 = amount0ToMint.mul(amount1Minted);
+        uint256 mul2 = amount1ToMint.mul(amount0Minted);
+
+        if (mul1 > mul2) {
             swapToken0ForToken1(
                 swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
                 swapAmount
             );
             amount0 = amount0ToMint.sub(swapAmount);
             amount1 = amount1ToMint.add(swapAmount);
-        } else if (
-            amount0Minted.div(TOKEN_0_DECIMALS) >
-            amount1Minted.div(TOKEN_1_DECIMALS)
-        ) {
+        } else if (mul1 < mul2) {
             swapToken1ForToken0(
                 swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
                 swapAmount
@@ -686,16 +683,13 @@ contract xU3LPStable is
         uint256 amount0Minted,
         uint256 amount1Minted
     ) private pure returns (uint256 swapAmount) {
-        (uint256 mul1, uint256 mul2) = (0, 0);
-        if (amount0Minted > amount1Minted) {
-            // n = Y * Z - X * T/ Z + T
-            mul1 = amount1ToMint.mul(amount0Minted);
-            mul2 = amount0ToMint.mul(amount1Minted);
-        } else {
-            // n = X * T - Y * Z / Z + T
-            mul1 = amount0ToMint.mul(amount1Minted);
-            mul2 = amount1ToMint.mul(amount0Minted);
-        }
+        // formula: swapAmount = 
+        // (amount0ToMint * amount1Minted - 
+        //  amount1ToMint * amount0Minted) / 
+        // (amount0Minted + amount1Minted)
+        uint256 mul1 = amount0ToMint.mul(amount1Minted);
+        uint256 mul2 = amount1ToMint.mul(amount0Minted);
+
         uint256 sub1 = subAbs(mul1, mul2);
         uint256 add1 = amount0Minted.add(amount1Minted);
 
