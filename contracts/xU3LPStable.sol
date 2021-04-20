@@ -688,19 +688,18 @@ contract xU3LPStable is
     ) private pure returns (uint256 swapAmount) {
         (uint256 mul1, uint256 mul2) = (0, 0);
         if (amount0Minted > amount1Minted) {
-            // n = X * Z - Y * T / Z + T
-            mul1 = amount0ToMint.mul(amount0Minted);
-            mul2 = amount1ToMint.mul(amount1Minted);
+            // n = Y * Z - X * T/ Z + T
+            mul1 = amount1ToMint.mul(amount0Minted);
+            mul2 = amount0ToMint.mul(amount1Minted);
         } else {
             // n = X * T - Y * Z / Z + T
             mul1 = amount0ToMint.mul(amount1Minted);
             mul2 = amount1ToMint.mul(amount0Minted);
         }
-        int256 _sub1 = int256(mul1) - int256(mul2);
-        uint256 sub1 = _sub1 < 0 ? uint256(-_sub1) : uint256(_sub1);
+        uint256 sub1 = subAbs(mul1, mul2);
         uint256 add1 = amount0Minted.add(amount1Minted);
 
-        // Sometimes numbers are too big to be fit in ABDK's div 128-bit representation
+        // Some numbers are too big to fit in ABDK's div 128-bit representation
         // So calculate the root of the equation and then raise to the 2nd power
         uint128 sub1sqrt = ABDKMath64x64.sqrtu(sub1);
         uint128 add1sqrt = ABDKMath64x64.sqrtu(add1);
