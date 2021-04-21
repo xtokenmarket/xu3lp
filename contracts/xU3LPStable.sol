@@ -558,7 +558,10 @@ contract xU3LPStable is
      * Mint function which initializes the pool position
      * Must be called before any liquidity can be deposited
      */
-    function mintInitial(uint256 amount0, uint256 amount1) external onlyOwnerOrManager {
+    function mintInitial(uint256 amount0, uint256 amount1)
+        external
+        onlyOwnerOrManager
+    {
         require(
             amount0 > 0 || amount1 > 0,
             "Cannot mint without sending tokens"
@@ -668,8 +671,14 @@ contract xU3LPStable is
      * Emergency function in case of errant transfer
      * of any token directly to contract
      */
-    function withdrawToken(address token, address receiver) external onlyOwnerOrManager {
-        require(token != address(token0) && token != address(token1), "Only non-LP tokens can be withdrawn");
+    function withdrawToken(address token, address receiver)
+        external
+        onlyOwnerOrManager
+    {
+        require(
+            token != address(token0) && token != address(token1),
+            "Only non-LP tokens can be withdrawn"
+        );
         uint256 tokenBal = IERC20(address(token)).balanceOf(address(this));
         if (tokenBal > 0) {
             IERC20(address(token)).safeTransfer(receiver, tokenBal);
@@ -693,10 +702,12 @@ contract xU3LPStable is
     /*
      *  Admin function for unstaking beyond the scope of a rebalance
      */
-    function adminUnstake(uint256 amount0, uint256 amount1) external onlyOwnerOrManager {
+    function adminUnstake(uint256 amount0, uint256 amount1)
+        external
+        onlyOwnerOrManager
+    {
         _unstake(amount0, amount1);
     }
-
 
     function pauseContract() external onlyOwnerOrManager returns (bool) {
         _pause();
@@ -707,7 +718,6 @@ contract xU3LPStable is
         _unpause();
         return true;
     }
-
 
     function setManager(address _manager) external onlyOwner {
         manager = _manager;
@@ -720,13 +730,13 @@ contract xU3LPStable is
     modifier onlyOwnerOrManager {
         require(
             msg.sender == owner() ||
-            msg.sender == manager ||
-            msg.sender == manager2,
+                msg.sender == manager ||
+                msg.sender == manager2,
             "Non-admin caller"
         );
         _;
     }
-    
+
     /* ========================================================================================= */
     /*                                       Uniswap helpers                                     */
     /* ========================================================================================= */
@@ -794,20 +804,6 @@ contract xU3LPStable is
             amount0 = amount0ToMint.sub(swapAmount);
             amount1 = amount1ToMint.add(swapAmount);
         } else if (mul1 < mul2) {
-            swapToken1ForToken0(
-                swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
-                swapAmount
-            );
-            amount0 = amount0ToMint.add(swapAmount);
-            amount1 = amount1ToMint.sub(swapAmount);
-        } else if (amount0ToMint > amount1ToMint) {
-            swapToken0ForToken1(
-                swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
-                swapAmount
-            );
-            amount0 = amount0ToMint.sub(swapAmount);
-            amount1 = amount1ToMint.add(swapAmount);
-        } else if (amount0ToMint < amount1ToMint) {
             swapToken1ForToken0(
                 swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
                 swapAmount
