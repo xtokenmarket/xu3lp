@@ -98,7 +98,7 @@ async function deployXU3LP() {
     // burning - triggering swap (not enough USDC balance)
     burnAmount = bnDecimal(10000000);
     await xU3LP.burn(1, burnAmount);
-    console.log('burning 1 000 0000 USDC successful');
+    console.log('burning 10 000 000 USDC successful');
     await printPositionAndBufferBalance(xU3LP);
 
     await xU3LP.rebalance();
@@ -109,8 +109,12 @@ async function deployXU3LP() {
     let feesDAI = await xU3LP.withdrawableToken0Fees();
     let feesUSDC = await xU3LP.withdrawableToken1Fees();
     console.log('fees dai:', getNumberNoDecimals(feesDAI), 'usdc:', getNumberNoDecimals(feesUSDC));
-    await xU3LP.withdrawFees();
-    console.log('success withdrawing fees');
+    
+    console.log('setting manager 1 to user1');
+    let user1 = signers[1];
+    await xU3LP.setManager(user1.address);
+    await xU3LP.connect(user1).withdrawFees();
+    console.log('success withdrawing fees from manager 1');
     
     feesDAI = await xU3LP.withdrawableToken0Fees();
     feesUSDC = await xU3LP.withdrawableToken1Fees();

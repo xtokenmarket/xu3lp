@@ -60,6 +60,9 @@ contract xU3LPStable is
     uint256 public withdrawableToken1Fees;
     uint256 public tokenId; // token id representing this uniswap position
 
+    address private manager;
+    address private manager2;
+
     struct FeeDivisors {
         uint256 mintFee;
         uint256 burnFee;
@@ -69,6 +72,7 @@ contract xU3LPStable is
     FeeDivisors public feeDivisors;
 
     event Rebalance();
+    event PositionInitialized(int24 tickLower, int24 tickUpper);
     event PositionMigrated(int24 tickLower, int24 tickUpper);
     event FeeDivisorsSet(uint256 mintFee, uint256 burnFee, uint256 claimFee);
     event FeeWithdraw(uint256 token0Fee, uint256 token1Fee);
@@ -307,7 +311,7 @@ contract xU3LPStable is
     /*                                            Management                                     */
     /* ========================================================================================= */
 
-    function rebalance() external onlyOwner {
+    function rebalance() external onlyOwnerOrManager {
         _collect();
         _rebalance();
         _certifyAdmin();
@@ -439,7 +443,7 @@ contract xU3LPStable is
     // Migrate the current position to a new position with different ticks
     function migratePosition(int24 newTickLower, int24 newTickUpper)
         external
-        onlyOwner
+        onlyOwnerOrManager
     {
         require(
             newTickLower != tickLower && newTickUpper != tickUpper,
@@ -514,41 +518,6 @@ contract xU3LPStable is
     }
 
     /**
-     * Mint function which initializes the pool position
-     * Must be called before any liquidity can be deposited
-     */
-    function mintInitial(uint256 amount0, uint256 amount1) external onlyOwner {
-        require(
-            amount0 > 0 || amount1 > 0,
-            "Cannot mint without sending tokens"
-        );
-        if (amount0 > 0) {
-            token0.transferFrom(msg.sender, address(this), amount0);
-        }
-        if (amount1 > 0) {
-            token1.transferFrom(msg.sender, address(this), amount1);
-        }
-        (uint256 _tokenId, , , ) =
-            positionManager.mint(
-                INonfungiblePositionManager.MintParams({
-                    token0: address(token0),
-                    token1: address(token1),
-                    fee: POOL_FEE,
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    amount0Desired: amount0,
-                    amount1Desired: amount1,
-                    amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                    amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                    recipient: address(this),
-                    deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
-                })
-            );
-        tokenId = _tokenId;
-        _mintInternal(amount0.add(getAmountInAsset0Terms(amount1)));
-    }
-
-    /**
      * Transfers asset amount when user calls burn()
      * If there's not enough balance of that asset,
      * triggers a router swap to increase the balance
@@ -585,6 +554,42 @@ contract xU3LPStable is
         }
     }
 
+    /**
+     * Mint function which initializes the pool position
+     * Must be called before any liquidity can be deposited
+     */
+    function mintInitial(uint256 amount0, uint256 amount1) external onlyOwnerOrManager {
+        require(
+            amount0 > 0 || amount1 > 0,
+            "Cannot mint without sending tokens"
+        );
+        if (amount0 > 0) {
+            token0.transferFrom(msg.sender, address(this), amount0);
+        }
+        if (amount1 > 0) {
+            token1.transferFrom(msg.sender, address(this), amount1);
+        }
+        (uint256 _tokenId, , , ) =
+            positionManager.mint(
+                INonfungiblePositionManager.MintParams({
+                    token0: address(token0),
+                    token1: address(token1),
+                    fee: POOL_FEE,
+                    tickLower: tickLower,
+                    tickUpper: tickUpper,
+                    amount0Desired: amount0,
+                    amount1Desired: amount1,
+                    amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
+                    amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
+                    recipient: address(this),
+                    deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+                })
+            );
+        tokenId = _tokenId;
+        _mintInternal(amount0.add(getAmountInAsset0Terms(amount1)));
+        emit PositionInitialized(tickLower, tickUpper);
+    }
+
     /*
      * @notice Registers that admin is present and active
      * @notice If admin isn't certified within liquidation time period,
@@ -609,20 +614,6 @@ contract xU3LPStable is
         uint256 mintAmount = calculateMintAmount(_amount, totalSupply());
 
         return super._mint(msg.sender, mintAmount);
-    }
-
-    /*
-     * Withdraw function for token0 and token1 fees
-     */
-    function withdrawFees() external onlyOwner {
-        uint256 token0Fees = withdrawableToken0Fees;
-        uint256 token1Fees = withdrawableToken1Fees;
-        withdrawableToken0Fees = 0;
-        withdrawableToken1Fees = 0;
-        token0.safeTransfer(msg.sender, token0Fees);
-        token1.safeTransfer(msg.sender, token1Fees);
-
-        emit FeeWithdraw(token0Fees, token1Fees);
     }
 
     function _calculateFee(uint256 _value, uint256 _feeDivisor)
@@ -654,7 +645,7 @@ contract xU3LPStable is
         uint256 mintFeeDivisor,
         uint256 burnFeeDivisor,
         uint256 claimFeeDivisor
-    ) public onlyOwner {
+    ) public onlyOwnerOrManager {
         _setFeeDivisors(mintFeeDivisor, burnFeeDivisor, claimFeeDivisor);
     }
 
@@ -673,6 +664,69 @@ contract xU3LPStable is
         emit FeeDivisorsSet(_mintFeeDivisor, _burnFeeDivisor, _claimFeeDivisor);
     }
 
+    /*
+     * Emergency function in case of errant transfer
+     * of any token directly to contract
+     */
+    function withdrawToken(address token, address receiver) external onlyOwnerOrManager {
+        require(token != address(token0) && token != address(token1), "Only non-LP tokens can be withdrawn");
+        uint256 tokenBal = IERC20(address(token)).balanceOf(address(this));
+        if (tokenBal > 0) {
+            IERC20(address(token)).safeTransfer(receiver, tokenBal);
+        }
+    }
+
+    /*
+     * Withdraw function for token0 and token1 fees
+     */
+    function withdrawFees() external onlyOwnerOrManager {
+        uint256 token0Fees = withdrawableToken0Fees;
+        uint256 token1Fees = withdrawableToken1Fees;
+        withdrawableToken0Fees = 0;
+        withdrawableToken1Fees = 0;
+        token0.safeTransfer(msg.sender, token0Fees);
+        token1.safeTransfer(msg.sender, token1Fees);
+
+        emit FeeWithdraw(token0Fees, token1Fees);
+    }
+
+    /*
+     *  Admin function for unstaking beyond the scope of a rebalance
+     */
+    function adminUnstake(uint256 amount0, uint256 amount1) external onlyOwnerOrManager {
+        _unstake(amount0, amount1);
+    }
+
+
+    function pauseContract() external onlyOwnerOrManager returns (bool) {
+        _pause();
+        return true;
+    }
+
+    function unpauseContract() external onlyOwnerOrManager returns (bool) {
+        _unpause();
+        return true;
+    }
+
+
+    function setManager(address _manager) external onlyOwner {
+        manager = _manager;
+    }
+
+    function setManager2(address _manager2) external onlyOwner {
+        manager2 = _manager2;
+    }
+
+    modifier onlyOwnerOrManager {
+        require(
+            msg.sender == owner() ||
+            msg.sender == manager ||
+            msg.sender == manager2,
+            "Non-admin caller"
+        );
+        _;
+    }
+    
     /* ========================================================================================= */
     /*                                       Uniswap helpers                                     */
     /* ========================================================================================= */
@@ -849,8 +903,12 @@ contract xU3LPStable is
         return twap;
     }
 
-    /// comparator for 32-bit timestamps
-    /// @return bool Whether a <= b
+    /* ========================================================================================= */
+    /*                                         Utils                                             */
+    /* ========================================================================================= */
+
+    // comparator for 32-bit timestamps
+    // @return bool Whether a <= b
     function lte(
         uint32 time,
         uint32 a,
