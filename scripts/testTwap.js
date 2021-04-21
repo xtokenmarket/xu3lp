@@ -1,6 +1,6 @@
 const { ethers, upgrades } = require('hardhat');
 const { deployArgs, getTWAP, getPriceInX96Format, 
-        getXU3LPBalance, bnDecimal, getNumberNoDecimals } = require('./helpers');
+        getXU3LPBalance, bnDecimal, getNumberNoDecimals, getTokenPrices } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =
@@ -112,21 +112,11 @@ async function testTWAP() {
         sqrtPriceLimitX96: highPrice
     });
 
-    console.log('after swapping 50M USDC for DAI');
-    let poolBalance = await xU3LP.getPoolTokenBalance();
+    console.log('\n---- Swap 50M USDC for DAI ----')
+    let poolBalance = await xU3LP.getStakedTokenBalance();
     console.log('pool balances:', getNumberNoDecimals(poolBalance.amount0), 'DAI',
                                   getNumberNoDecimals(poolBalance.amount1), 'USDC');
-    // Increase time by 1 hour = 3600 seconds to get previous price
-    await network.provider.send("evm_increaseTime", [3600]);
-    await network.provider.send("evm_mine");
-    // Get asset 0 price
-    let asset0Price = await xU3LP.getAsset0Price();
-    let twap = getTWAP(asset0Price);
-    console.log('twap token0:', twap);
-    // Get Asset 1 Price
-    let asset1Price = await xU3LP.getAsset1Price();
-    twap = getTWAP(asset1Price);
-    console.log('twap token1:', twap);
+    await getTokenPrices(xU3LP);
 
     // Mint and burn at asset 0 price = 1.0029
     console.log('\n---- Mint and burn at asset 0 price = 1.0029 ----\n')
@@ -162,19 +152,9 @@ async function testTWAP() {
       sqrtPriceLimitX96: lowPrice
     });
 
-    console.log('after swapping 150M DAI for USDC');
-    // Increase time by 1 hour = 3600 seconds to get previous price
-    await network.provider.send("evm_increaseTime", [3600]);
-    await network.provider.send("evm_mine");
-    // Get asset 0 price
-    asset0Price = await xU3LP.getAsset0Price();
-    twap = getTWAP(asset0Price);
-    console.log('twap token0:', twap);
-    // Get Asset 1 Price
-    asset1Price = await xU3LP.getAsset1Price();
-    twap = getTWAP(asset1Price);
-    console.log('twap token1:', twap);
-    poolBalance = await xU3LP.getPoolTokenBalance();
+    console.log('\n---- Swap 150M DAI for USDC ----')
+    await getTokenPrices(xU3LP);
+    poolBalance = await xU3LP.getStakedTokenBalance();
     console.log('pool balances:', getNumberNoDecimals(poolBalance.amount0), 'DAI', 
                                   getNumberNoDecimals(poolBalance.amount1), 'USDC');
 
@@ -216,18 +196,8 @@ async function testTWAP() {
     });
 
     console.log('after swapping 100M USDC for DAI');
-    // Increase time by 1 hour = 3600 seconds to get previous price
-    await network.provider.send("evm_increaseTime", [3600]);
-    await network.provider.send("evm_mine");
-    // Get asset 0 price
-    asset0Price = await xU3LP.getAsset0Price();
-    twap = getTWAP(asset0Price);
-    console.log('twap token0:', twap);
-    // Get Asset 1 Price
-    asset1Price = await xU3LP.getAsset1Price();
-    twap = getTWAP(asset1Price);
-    console.log('twap token1:', twap);
-    poolBalance = await xU3LP.getPoolTokenBalance();
+    await getTokenPrices(xU3LP);
+    poolBalance = await xU3LP.getStakedTokenBalance();
     console.log('pool balances:', getNumberNoDecimals(poolBalance.amount0), 'DAI', 
                                   getNumberNoDecimals(poolBalance.amount1), 'USDC');
 

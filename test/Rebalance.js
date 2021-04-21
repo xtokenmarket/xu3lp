@@ -16,7 +16,7 @@ describe('Contract: xU3LP', async () => {
   describe('Rebalance', async () => {
     it('should rebalance toward pool if bufferBalance > 5 % total balance', async () => {
         let startBufferBalance = await getBalance(dai, usdc, xU3LP.address);
-        let startPoolBalance = await xU3LP.getPoolTokenBalance();
+        let startPoolBalance = await xU3LP.getStakedTokenBalance();
 
         assert(startBufferBalance.dai == 0);
         assert(startBufferBalance.usdc == 0);
