@@ -344,12 +344,14 @@ contract xU3LPStable is
 
     function _stake(uint256 amount0, uint256 amount1) private {
         positionManager.increaseLiquidity(
-            tokenId,
-            amount0,
-            amount1,
-            amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-            amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-            block.timestamp.add(MINT_BURN_TIMEOUT)
+            INonfungiblePositionManager.IncreaseLiquidityParams({
+                tokenId: tokenId,
+                amount0Desired: amount0,
+                amount1Desired: amount1,
+                amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
+                amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
+                deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+            })
         );
     }
 
@@ -363,19 +365,25 @@ contract xU3LPStable is
                 amount0,
                 amount1
             );
+
         (uint256 _amount0, uint256 _amount1) =
             positionManager.decreaseLiquidity(
-                tokenId,
-                liquidityAmount,
-                amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                amount1.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                block.timestamp.add(MINT_BURN_TIMEOUT)
+                INonfungiblePositionManager.DecreaseLiquidityParams({
+                    tokenId: tokenId,
+                    liquidity: liquidityAmount,
+                    amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
+                    amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
+                    deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+                })
             );
+
         positionManager.collect(
-            tokenId,
-            address(this),
-            uint128(_amount0),
-            uint128(_amount1)
+            INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId,
+                recipient: address(this),
+                amount0Max: uint128(_amount0),
+                amount1Max: uint128(_amount1)
+            })
         );
     }
 
@@ -386,10 +394,12 @@ contract xU3LPStable is
 
         (uint256 collected0, uint256 collected1) =
             positionManager.collect(
-                tokenId,
-                address(this),
-                requestAmount0,
-                requestAmount1
+                INonfungiblePositionManager.CollectParams({
+                    tokenId: tokenId,
+                    recipient: address(this),
+                    amount0Max: requestAmount0,
+                    amount1Max: requestAmount1
+                })
             );
 
         uint256 fee0 = _calculateFee(collected0, feeDivisors.claimFee);
@@ -501,17 +511,21 @@ contract xU3LPStable is
                 liquidity
             );
         (_amount0, _amount1) = positionManager.decreaseLiquidity(
-            tokenId,
-            liquidity,
-            amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-            amount1.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-            block.timestamp.add(MINT_BURN_TIMEOUT)
+            INonfungiblePositionManager.DecreaseLiquidityParams({
+                tokenId: tokenId,
+                liquidity: liquidity,
+                amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
+                amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
+                deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+            })
         );
         positionManager.collect(
-            tokenId,
-            address(this),
-            uint128(_amount0),
-            uint128(_amount1)
+            INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId,
+                recipient: address(this),
+                amount0Max: uint128(_amount0),
+                amount1Max: uint128(_amount1)
+            })
         );
         // Collect fees
         _collect();
@@ -728,7 +742,7 @@ contract xU3LPStable is
         external
         onlyOwnerOrManager
     {
-        if(_0for1) {
+        if (_0for1) {
             swapToken0ForToken1(amount.add(amount.div(SWAP_SLIPPAGE)), amount);
         } else {
             swapToken1ForToken0(amount.add(amount.div(SWAP_SLIPPAGE)), amount);
