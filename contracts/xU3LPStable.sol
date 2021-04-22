@@ -19,14 +19,14 @@ import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.s
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 
 import "./ABDKMath64x64.sol";
-import "./TimeLock.sol";
+import "./BlockLock.sol";
 
 contract xU3LPStable is
     Initializable,
     ERC20Upgradeable,
     OwnableUpgradeable,
     PausableUpgradeable,
-    TimeLock
+    BlockLock
 {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -126,6 +126,7 @@ contract xU3LPStable is
     function mintWithToken(uint8 inputAsset, uint256 amount)
         external
         notLocked()
+        whenNotPaused()
     {
         require(amount > 0, "Must send token");
         uint256 fee;
@@ -456,7 +457,7 @@ contract xU3LPStable is
         onlyOwnerOrManager
     {
         require(
-            newTickLower != tickLower && newTickUpper != tickUpper,
+            newTickLower != tickLower || newTickUpper != tickUpper,
             "Position may only be migrated with different ticks"
         );
 
@@ -705,10 +706,14 @@ contract xU3LPStable is
     function withdrawFees() external onlyOwnerOrManager {
         uint256 token0Fees = withdrawableToken0Fees;
         uint256 token1Fees = withdrawableToken1Fees;
-        withdrawableToken0Fees = 0;
-        withdrawableToken1Fees = 0;
-        token0.safeTransfer(msg.sender, token0Fees);
-        token1.safeTransfer(msg.sender, token1Fees);
+        if(token0Fees > 0) {
+            token0.safeTransfer(msg.sender, token0Fees);
+            withdrawableToken0Fees = 0;
+        }
+        if(token1Fees > 0) {
+            token1.safeTransfer(msg.sender, token1Fees);
+            withdrawableToken1Fees = 0;
+        }
 
         emit FeeWithdraw(token0Fees, token1Fees);
     }

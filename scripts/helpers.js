@@ -18,14 +18,20 @@ async function deployArgs(contractName, ...args) {
 }
 
 /**
+ * Deploy a contract with abi
+ */
+ async function deployWithAbi(contract, deployer, ...args) {
+    let Factory = new ethers.ContractFactory(contract.abi, contract.bytecode, deployer);
+    return await Factory.deploy(...args);
+}
+
+/**
  * Get balance of two tokens
  * Used for testing Uniswap pool's tokens
  */
 async function getBalance(token0, token1, address) {
     let daiBalance = await token0.balanceOf(address);
     let usdcBalance = await token1.balanceOf(address);
-    console.log('dai balance:', getNumberNoDecimals(daiBalance), 
-                'usdc balance:', getNumberNoDecimals(usdcBalance));
     return {dai: getNumberNoDecimals(daiBalance), usdc: getNumberNoDecimals(usdcBalance)};
   }
 
@@ -111,6 +117,15 @@ async function getTokenPrices(xU3LP) {
 }
 
 /**
+ * Get latest block timestamp
+ * @returns current block timestamp
+ */
+async function getBlockTimestamp() {
+    const latestBlock = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
+    return web3.utils.hexToNumber(latestBlock.timestamp);
+}
+
+/**
  * Return actual twap price from ABDK 64.64 representation
  * Used with getAsset0Price()
  */
@@ -156,7 +171,7 @@ function getNumberNoDecimals(amount) {
 }
 
 module.exports = {
-    deploy, deployArgs, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
+    deploy, deployArgs, deployWithAbi, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
     getXU3LPBalance, getPositionBalance, getBufferBalance, printPositionAndBufferBalance,
-    bn, bnDecimal, getNumberNoDecimals
+    bn, bnDecimal, getNumberNoDecimals, getBlockTimestamp
 }

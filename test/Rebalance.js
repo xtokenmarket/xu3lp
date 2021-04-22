@@ -1,6 +1,7 @@
 const assert = require('assert');
+const { expect } = require('chai');
 const { deploymentFixture } = require('./fixture');
-const { getBalance, bn, bnDecimal, getNumberNoDecimals } = require('../scripts/helpers');
+const { getBalance, getBlockTimestamp, bn, bnDecimal, getNumberNoDecimals } = require('../scripts/helpers');
 
 // Rebalance tests for xU3LP
 describe('Contract: xU3LP', async () => {
@@ -59,6 +60,14 @@ describe('Contract: xU3LP', async () => {
 
         assert(targetBalances.dai == actualBalances.dai);
         assert(targetBalances.usdc == actualBalances.usdc);
+    }),
+
+    it('should certify admin is active on rebalance', async () => {
+      await xU3LP.rebalance();
+      let lastActive = await xU3LP.adminActiveTimestamp();
+      let blockTimestamp = await getBlockTimestamp();
+      lastActive = lastActive.toNumber();
+      assert(lastActive == blockTimestamp);
     })
   })
 })

@@ -1,6 +1,9 @@
 require('@nomiclabs/hardhat-ethers');
+require('@nomiclabs/hardhat-web3');
+require('@nomiclabs/hardhat-waffle');
 require('hardhat-deploy');
 require('hardhat-deploy-ethers');
+require('solidity-coverage')
 require('@openzeppelin/hardhat-upgrades');
 
 module.exports = {
