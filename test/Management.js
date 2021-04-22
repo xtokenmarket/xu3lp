@@ -30,8 +30,18 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to migrate position', async () => {
+        let prevTokenId = await xU3LP.tokenId();
+        let prevTicks = await xU3LP.getTicks();
+        expect(prevTicks.tick0).not.to.equal(-100);
+        expect(prevTicks.tick1).not.to.equal(100);
+
         await xU3LP.migratePosition(-100, 100);
-        assert(true);
+        let newTicks = await xU3LP.getTicks();
+        let newTokenId = await xU3LP.tokenId();
+
+        expect(newTicks.tick0).to.equal(-100);
+        expect(newTicks.tick1).to.equal(100);
+        expect(prevTokenId).not.to.equal(newTokenId);
     }),
 
     it('should allow admin to collect fees', async () => {
@@ -68,6 +78,70 @@ describe('Contract: xU3LP', async () => {
         expect(feeDivisors.mintFee).to.equal(100);
         expect(feeDivisors.burnFee).to.equal(200);
         expect(feeDivisors.claimFee).to.equal(500);
+    }),
+
+    it('should be able to pause and unpause the contract', async () => {
+        await xU3LP.pauseContract();
+        let isPaused = await xU3LP.paused();
+        assert(isPaused == true);
+
+        await xU3LP.unpauseContract();
+        isPaused = await xU3LP.paused();
+        assert(isPaused == false);
+    }),
+
+    it('should be able to transfer out arbitrary token from the contract', async () => {
+      await xU3LP.transfer(xU3LP.address, bnDecimal(1000));
+      let balanceBefore = await xU3LP.balanceOf(admin.address);
+      await xU3LP.withdrawToken(xU3LP.address, admin.address);
+      let balanceAfter = await xU3LP.balanceOf(admin.address);
+
+      expect(balanceAfter).to.be.gt(balanceBefore);
+    }),
+
+    it('should be able to stake without rebalancing', async () => {
+      let bufferBalanceBefore = await xU3LP.getBufferTokenBalance();
+      let stakedBalanceBefore = await xU3LP.getStakedTokenBalance();
+
+      await xU3LP.adminStake(bnDecimal(1000), bnDecimal(1000));
+
+      let bufferBalanceAfter = await xU3LP.getBufferTokenBalance();
+      let stakedBalanceAfter = await xU3LP.getStakedTokenBalance();
+
+      expect(bufferBalanceBefore.amount0).to.be.gt(bufferBalanceAfter.amount0);
+      expect(bufferBalanceBefore.amount1).to.be.gt(bufferBalanceAfter.amount1);
+
+      expect(stakedBalanceBefore.amount0).to.be.lt(stakedBalanceAfter.amount0);
+      expect(stakedBalanceBefore.amount1).to.be.lt(stakedBalanceAfter.amount1);
+    }),
+
+    it('should be able to unstake without rebalancing', async () => {
+      let bufferBalanceBefore = await xU3LP.getBufferTokenBalance();
+      let stakedBalanceBefore = await xU3LP.getStakedTokenBalance();
+
+      await xU3LP.adminUnstake(bnDecimal(1000), bnDecimal(1000));
+
+      let bufferBalanceAfter = await xU3LP.getBufferTokenBalance();
+      let stakedBalanceAfter = await xU3LP.getStakedTokenBalance();
+
+      expect(bufferBalanceBefore.amount0).to.be.lt(bufferBalanceAfter.amount0);
+      expect(bufferBalanceBefore.amount1).to.be.lt(bufferBalanceAfter.amount1);
+
+      expect(stakedBalanceBefore.amount0).to.be.gt(stakedBalanceAfter.amount0);
+      expect(stakedBalanceBefore.amount1).to.be.gt(stakedBalanceAfter.amount1);
+    }),
+
+    it('should be able to swap tokens in xU3LP', async () => {
+      let balanceBefore = await xU3LP.getBufferTokenBalance();
+
+      // true - swap token 0 for token 1
+      let swapAmount = bnDecimal(10000);
+      await xU3LP.adminSwap(swapAmount, true);
+
+      let balanceAfter = await xU3LP.getBufferTokenBalance();
+
+      expect(balanceAfter.amount0).to.be.lt(balanceBefore.amount0);
+      expect(balanceAfter.amount1).to.be.gt(balanceBefore.amount1);
     })
   })
 })

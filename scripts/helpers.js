@@ -116,6 +116,40 @@ async function getTokenPrices(xU3LP) {
     }
 }
 
+async function swapToken0ForToken1(router, token0, token1, swapperAddress, amount) {
+    const lowPrice = getPriceInX96Format(0.997);
+    const pendingBlock = await network.provider.send("eth_getBlockByNumber", ["pending", false])
+    const timestamp = pendingBlock.timestamp + 10000;
+
+    await router.exactInputSingle({
+        tokenIn: token0.address,
+        tokenOut: token1.address,
+        fee: 500,
+        recipient: swapperAddress,
+        deadline: timestamp,
+        amountIn: amount,
+        amountOutMinimum: amount.sub(amount.div(100)),
+        sqrtPriceLimitX96: lowPrice
+      });
+}
+
+async function swapToken1ForToken0(router, token0, token1, swapperAddress, amount) {
+    const highPrice = getPriceInX96Format(1.003);
+    const pendingBlock = await network.provider.send("eth_getBlockByNumber", ["pending", false])
+    const timestamp = pendingBlock.timestamp + 10000;
+
+    await router.exactInputSingle({
+        tokenIn: token1.address,
+        tokenOut: token0.address,
+        fee: 500,
+        recipient: swapperAddress,
+        deadline: timestamp,
+        amountIn: amount,
+        amountOutMinimum: amount.sub(amount.div(100)),
+        sqrtPriceLimitX96: highPrice
+    });
+}
+
 /**
  * Get latest block timestamp
  * @returns current block timestamp
@@ -123,6 +157,14 @@ async function getTokenPrices(xU3LP) {
 async function getBlockTimestamp() {
     const latestBlock = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
     return web3.utils.hexToNumber(latestBlock.timestamp);
+}
+
+/**
+ * Increase time in Hardhat Network
+ */
+async function increaseTime(time) {
+    await network.provider.send("evm_increaseTime", [time]);
+    await network.provider.send("evm_mine");
 }
 
 /**
@@ -173,5 +215,6 @@ function getNumberNoDecimals(amount) {
 module.exports = {
     deploy, deployArgs, deployWithAbi, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
     getXU3LPBalance, getPositionBalance, getBufferBalance, printPositionAndBufferBalance,
-    bn, bnDecimal, getNumberNoDecimals, getBlockTimestamp
+    bn, bnDecimal, getNumberNoDecimals, getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0,
+    increaseTime
 }
