@@ -700,6 +700,16 @@ contract xU3LPStable is
     }
 
     /*
+     *  Admin function for staking beyond the scope of a rebalance
+     */
+    function adminStake(uint256 amount0, uint256 amount1)
+        external
+        onlyOwnerOrManager
+    {
+        _stake(amount0, amount1);
+    }
+
+    /*
      *  Admin function for unstaking beyond the scope of a rebalance
      */
     function adminUnstake(uint256 amount0, uint256 amount1)
@@ -707,6 +717,22 @@ contract xU3LPStable is
         onlyOwnerOrManager
     {
         _unstake(amount0, amount1);
+    }
+
+    /*
+     *  Admin function for swapping LP tokens in xU3LP
+     *  @param amount - how much to swap
+     *  @param _0for1 - swap token 0 for 1 if true, token 1 for 0 if false
+     */
+    function adminSwap(uint256 amount, bool _0for1)
+        external
+        onlyOwnerOrManager
+    {
+        if(_0for1) {
+            swapToken0ForToken1(amount.add(amount.div(SWAP_SLIPPAGE)), amount);
+        } else {
+            swapToken1ForToken0(amount.add(amount.div(SWAP_SLIPPAGE)), amount);
+        }
     }
 
     function pauseContract() external onlyOwnerOrManager returns (bool) {
