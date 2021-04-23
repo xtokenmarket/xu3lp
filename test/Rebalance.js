@@ -1,6 +1,7 @@
 const assert = require('assert');
+const { expect } = require('chai');
 const { deploymentFixture } = require('./fixture');
-const { getBalance, bn, bnDecimal, getNumberNoDecimals } = require('../scripts/helpers');
+const { getBalance, getBlockTimestamp, bn, bnDecimal, getNumberNoDecimals } = require('../scripts/helpers');
 
 // Rebalance tests for xU3LP
 describe('Contract: xU3LP', async () => {
@@ -8,15 +9,17 @@ describe('Contract: xU3LP', async () => {
   let bufferPercentage = 5;
 
   beforeEach(async () => {
-		({ dai, usdc, xU3LP } = await deploymentFixture());
-    const signers = await ethers.getSigners();
-    user = signers[1];
+      ({ dai, usdc, xU3LP } = await deploymentFixture());
+      const signers = await ethers.getSigners();
+      user = signers[1];
+      let mintAmount = bnDecimal(100000000);
+      await xU3LP.mintInitial(mintAmount, mintAmount);
   })
 
   describe('Rebalance', async () => {
     it('should rebalance toward pool if bufferBalance > 5 % total balance', async () => {
         let startBufferBalance = await getBalance(dai, usdc, xU3LP.address);
-        let startPoolBalance = await xU3LP.getPoolTokenBalance();
+        let startPoolBalance = await xU3LP.getStakedTokenBalance();
 
         assert(startBufferBalance.dai == 0);
         assert(startBufferBalance.usdc == 0);
@@ -59,6 +62,82 @@ describe('Contract: xU3LP', async () => {
 
         assert(targetBalances.dai == actualBalances.dai);
         assert(targetBalances.usdc == actualBalances.usdc);
+    }),
+
+    it('should collect fees after rebalancing to pool (token 0)', async () => {
+        await xU3LP.rebalance();
+
+        await xU3LP.mintWithToken(0, bnDecimal(100000));
+        await xU3LP.mintWithToken(1, bnDecimal(100000));
+        let feesBefore = await xU3LP.withdrawableToken0Fees();
+
+        // swap tokens so as to generate fees
+        // only token 0 fees are generated, swap is token0 for token1
+        await xU3LP.adminSwap(bnDecimal(10000), true);
+
+        await xU3LP.rebalance();
+        let feesAfter = await xU3LP.withdrawableToken0Fees();
+
+        expect(feesAfter).to.be.gt(feesBefore);
+    }),
+
+    it('should collect fees after rebalancing to pool (token 1)', async () => {
+        await xU3LP.rebalance();
+
+        await xU3LP.mintWithToken(0, bnDecimal(100000));
+        await xU3LP.mintWithToken(1, bnDecimal(100000));
+        let feesBefore = await xU3LP.withdrawableToken1Fees();
+
+        // swap tokens so as to generate fees
+        // only token 1 fees are generated, swap is token1 for token0
+        await xU3LP.adminSwap(bnDecimal(10000), false);
+
+        await xU3LP.rebalance();
+        let feesAfter = await xU3LP.withdrawableToken1Fees();
+
+        expect(feesAfter).to.be.gt(feesBefore);
+    }),
+
+    it('should collect fees after rebalancing to xu3lp (token 0)', async () => {
+        await xU3LP.rebalance();
+
+        await xU3LP.burn(0, bnDecimal(10000));
+        await xU3LP.burn(1, bnDecimal(10000));
+        let feesBefore = await xU3LP.withdrawableToken0Fees();
+
+        // swap tokens so as to generate fees
+        // only token 0 fees are generated, swap is token0 for token1
+        await xU3LP.adminSwap(bnDecimal(1000), true);
+
+        await xU3LP.rebalance();
+        let feesAfter = await xU3LP.withdrawableToken0Fees();
+
+        expect(feesAfter).to.be.gt(feesBefore);
+    }),
+
+    it('should collect fees after rebalancing to xu3lp (token 1)', async () => {
+        await xU3LP.rebalance();
+        
+        await xU3LP.burn(0, bnDecimal(10000));
+        await xU3LP.burn(1, bnDecimal(10000));
+        let feesBefore = await xU3LP.withdrawableToken1Fees();
+
+        // swap tokens so as to generate fees
+        // only token 1 fees are generated, swap is token1 for token0
+        await xU3LP.adminSwap(bnDecimal(10000), false);
+
+        await xU3LP.rebalance();
+        let feesAfter = await xU3LP.withdrawableToken1Fees();
+
+        expect(feesAfter).to.be.gt(feesBefore);
+    })
+
+    it('should certify admin is active on rebalance', async () => {
+        await xU3LP.rebalance();
+        let lastActive = await xU3LP.adminActiveTimestamp();
+        let blockTimestamp = await getBlockTimestamp();
+        lastActive = lastActive.toNumber();
+        assert(lastActive == blockTimestamp);
     })
   })
 })

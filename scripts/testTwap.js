@@ -1,6 +1,6 @@
 const { ethers, upgrades } = require('hardhat');
-const { deployArgs, getTWAP, getPriceInX96Format, 
-        getXU3LPBalance, bnDecimal, getNumberNoDecimals } = require('./helpers');
+const { deployArgs, deployWithAbi, getTWAP, getPriceInX96Format, 
+        getXU3LPBalance, bnDecimal, getNumberNoDecimals, getTokenPrices } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =
@@ -16,32 +16,28 @@ const UniFactory = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Factor
 // After making various swaps using the router
 async function testTWAP() {
     const signers = await ethers.getSigners();
-    const admin = signers[0].address;
+    const admin = signers[0];
 
     const dai = await deployArgs('DAI', 'DAI', 'DAI');
     const usdc = await deployArgs('USDC', 'USDC', 'USDC');
     const weth = await deployArgs('WETH', 'WETH', 'WETH');
 
-    let Factory = new ethers.ContractFactory(UniFactory.abi, UniFactory.bytecode, signers[0]);
-    const uniFactory = await Factory.deploy();
+    const uniFactory = await deployWithAbi(UniFactory, admin);
+    const tokenDescriptor = await deployWithAbi(NFTPositionDescriptor, admin, weth.address);
+    const positionManager = await deployWithAbi(NFTPositionManager, admin, 
+                                                uniFactory.address, weth.address, tokenDescriptor.address);
+    const router = await deployWithAbi(swapRouter, admin, uniFactory.address, weth.address);
 
     // 0.997 - 1.003 price
     const lowTick = -60;
     const highTick = 60;
+    // Price = 1
     const price = getPriceInX96Format(1);
     const lowPrice = getPriceInX96Format(0.997);
     const highPrice = getPriceInX96Format(1.003);
 
-    const TokenDescriptor = new ethers.ContractFactory(NFTPositionDescriptor.abi, NFTPositionDescriptor.bytecode, signers[0]);
-    const PositionManager = new ethers.ContractFactory(NFTPositionManager.abi, NFTPositionManager.bytecode, signers[0]);
-    const tokenDescriptor = await TokenDescriptor.deploy(weth.address);
-    const positionManager = await PositionManager.deploy(uniFactory.address, weth.address, tokenDescriptor.address);
-
     await positionManager.createAndInitializePoolIfNecessary(dai.address, usdc.address, 500, price);
     const poolAddress = await uniFactory.getPool(dai.address, usdc.address, 500);
-
-    const Router = new ethers.ContractFactory(swapRouter.abi, swapRouter.bytecode, signers[0]);
-    const router = await Router.deploy(uniFactory.address, weth.address);
     
     const XU3LP = await ethers.getContractFactory("xU3LPStable");
     const xU3LP = await upgrades.deployProxy(XU3LP, ["xU3LP", lowTick, highTick, dai.address, usdc.address, 
@@ -105,28 +101,18 @@ async function testTWAP() {
         tokenIn: usdc.address,
         tokenOut: dai.address,
         fee: 500,
-        recipient: admin,
+        recipient: admin.address,
         deadline: timestamp,
         amountIn: bnDecimal(50000000),
         amountOutMinimum: bnDecimal(4900000),
         sqrtPriceLimitX96: highPrice
     });
 
-    console.log('after swapping 50M USDC for DAI');
-    let poolBalance = await xU3LP.getPoolTokenBalance();
+    console.log('\n---- Swap 50M USDC for DAI ----')
+    let poolBalance = await xU3LP.getStakedTokenBalance();
     console.log('pool balances:', getNumberNoDecimals(poolBalance.amount0), 'DAI',
                                   getNumberNoDecimals(poolBalance.amount1), 'USDC');
-    // Increase time by 1 hour = 3600 seconds to get previous price
-    await network.provider.send("evm_increaseTime", [3600]);
-    await network.provider.send("evm_mine");
-    // Get asset 0 price
-    let asset0Price = await xU3LP.getAsset0Price();
-    let twap = getTWAP(asset0Price);
-    console.log('twap token0:', twap);
-    // Get Asset 1 Price
-    let asset1Price = await xU3LP.getAsset1Price();
-    twap = getTWAP(asset1Price);
-    console.log('twap token1:', twap);
+    await getTokenPrices(xU3LP);
 
     // Mint and burn at asset 0 price = 1.0029
     console.log('\n---- Mint and burn at asset 0 price = 1.0029 ----\n')
@@ -155,26 +141,16 @@ async function testTWAP() {
       tokenIn: dai.address,
       tokenOut: usdc.address,
       fee: 500,
-      recipient: admin,
+      recipient: admin.address,
       deadline: timestamp,
       amountIn: bnDecimal(150000000),
       amountOutMinimum: bnDecimal(14900000),
       sqrtPriceLimitX96: lowPrice
     });
 
-    console.log('after swapping 150M DAI for USDC');
-    // Increase time by 1 hour = 3600 seconds to get previous price
-    await network.provider.send("evm_increaseTime", [3600]);
-    await network.provider.send("evm_mine");
-    // Get asset 0 price
-    asset0Price = await xU3LP.getAsset0Price();
-    twap = getTWAP(asset0Price);
-    console.log('twap token0:', twap);
-    // Get Asset 1 Price
-    asset1Price = await xU3LP.getAsset1Price();
-    twap = getTWAP(asset1Price);
-    console.log('twap token1:', twap);
-    poolBalance = await xU3LP.getPoolTokenBalance();
+    console.log('\n---- Swap 150M DAI for USDC ----')
+    await getTokenPrices(xU3LP);
+    poolBalance = await xU3LP.getStakedTokenBalance();
     console.log('pool balances:', getNumberNoDecimals(poolBalance.amount0), 'DAI', 
                                   getNumberNoDecimals(poolBalance.amount1), 'USDC');
 
@@ -208,7 +184,7 @@ async function testTWAP() {
       tokenIn: usdc.address,
       tokenOut: dai.address,
       fee: 500,
-      recipient: admin,
+      recipient: admin.address,
       deadline: timestamp,
       amountIn: bnDecimal(100000000),
       amountOutMinimum: bnDecimal(99000000),
@@ -216,18 +192,8 @@ async function testTWAP() {
     });
 
     console.log('after swapping 100M USDC for DAI');
-    // Increase time by 1 hour = 3600 seconds to get previous price
-    await network.provider.send("evm_increaseTime", [3600]);
-    await network.provider.send("evm_mine");
-    // Get asset 0 price
-    asset0Price = await xU3LP.getAsset0Price();
-    twap = getTWAP(asset0Price);
-    console.log('twap token0:', twap);
-    // Get Asset 1 Price
-    asset1Price = await xU3LP.getAsset1Price();
-    twap = getTWAP(asset1Price);
-    console.log('twap token1:', twap);
-    poolBalance = await xU3LP.getPoolTokenBalance();
+    await getTokenPrices(xU3LP);
+    poolBalance = await xU3LP.getStakedTokenBalance();
     console.log('pool balances:', getNumberNoDecimals(poolBalance.amount0), 'DAI', 
                                   getNumberNoDecimals(poolBalance.amount1), 'USDC');
 

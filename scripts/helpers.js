@@ -18,24 +18,153 @@ async function deployArgs(contractName, ...args) {
 }
 
 /**
+ * Deploy a contract with abi
+ */
+ async function deployWithAbi(contract, deployer, ...args) {
+    let Factory = new ethers.ContractFactory(contract.abi, contract.bytecode, deployer);
+    return await Factory.deploy(...args);
+}
+
+/**
  * Get balance of two tokens
  * Used for testing Uniswap pool's tokens
  */
 async function getBalance(token0, token1, address) {
     let daiBalance = await token0.balanceOf(address);
     let usdcBalance = await token1.balanceOf(address);
-    let decimal = Math.pow(10, 18);
-    let decimals = new ethers.BigNumber.from(decimal.toString());
-    console.log('dai balance:', daiBalance.div(decimals).toString(), 'usdc balance:', usdcBalance.div(decimals).toString());
-    return {dai: daiBalance.div(decimals).toNumber(), usdc: usdcBalance.div(decimals).toNumber()};
+    return {dai: getNumberNoDecimals(daiBalance), usdc: getNumberNoDecimals(usdcBalance)};
   }
 
-  /**
-   * Get token balance of an address
-   */
+/**
+ * Get token balance of an address
+ */
 async function getXU3LPBalance(token, address) {
     let balance = await token.balanceOf(address);
     return balance;
+}
+
+/**
+ * Get position balance
+ * @param xU3LP xU3LP contract
+ * @returns 
+ */
+async function getPositionBalance(xU3LP) {
+    let tokenBalance = await xU3LP.getStakedTokenBalance();
+    return {
+        dai: getNumberNoDecimals(tokenBalance.amount0),
+        usdc: getNumberNoDecimals(tokenBalance.amount1)
+    }
+}
+
+/**
+ * Get buffer balance
+ * @param xU3LP xU3LP contract
+ * @returns 
+ */
+ async function getBufferBalance(xU3LP) {
+    let tokenBalance = await xU3LP.getBufferTokenBalance();
+    return {
+        dai: getNumberNoDecimals(tokenBalance.amount0),
+        usdc: getNumberNoDecimals(tokenBalance.amount1)
+    }
+}
+
+/**
+ * Print the current pool position and xU3LP (buffer) token balances
+ * @param xU3LP xU3LP contract
+ */
+async function printPositionAndBufferBalance(xU3LP) {
+    let bufferBalance = await getBufferBalance(xU3LP);
+    let positionBalance = await getPositionBalance(xU3LP);
+    console.log('xU3LP balance:\n' + 'dai:', bufferBalance.dai, 'usdc:', bufferBalance.usdc);
+    console.log('position balance:\n' + 'dai:', positionBalance.dai, 'usdc:', positionBalance.usdc);
+}
+
+/**
+ * Get the buffer:pool token ratio
+ * @param xU3LP xU3LP contract
+ */
+async function getRatio(xU3LP) {
+    let bufferBalance = await xU3LP.getBufferBalance();
+    let poolBalance = await xU3LP.getStakedBalance();
+
+    let contractPoolTokenRatio = (getNumberNoDecimals(bufferBalance) + getNumberNoDecimals(poolBalance)) / 
+                                  getNumberNoDecimals(bufferBalance);
+    
+    console.log('xU3LP : pool token ratio:', (100 / contractPoolTokenRatio.toFixed(2)).toFixed(2) + '%');
+}
+
+/**
+ * Get calculated twaps of token0 and token1
+ * @param xU3LP xU3LP contract
+ */
+async function getTokenPrices(xU3LP) {
+    // Increase time by 1 hour = 3600 seconds to get previous price
+    await network.provider.send("evm_increaseTime", [3600]);
+    await network.provider.send("evm_mine");
+    // Get asset 0 price
+    let asset0Price = await xU3LP.getAsset0Price();
+    let twap0 = getTWAP(asset0Price);
+    console.log('twap token0:', twap0);
+    // Get Asset 1 Price
+    let asset1Price = await xU3LP.getAsset1Price();
+    let twap1 = getTWAP(asset1Price);
+    console.log('twap token1:', twap1);
+    return {
+        asset0: twap0,
+        asset1: twap1
+    }
+}
+
+async function swapToken0ForToken1(router, token0, token1, swapperAddress, amount) {
+    const lowPrice = getPriceInX96Format(0.997);
+    const pendingBlock = await network.provider.send("eth_getBlockByNumber", ["pending", false])
+    const timestamp = pendingBlock.timestamp + 10000;
+
+    await router.exactInputSingle({
+        tokenIn: token0.address,
+        tokenOut: token1.address,
+        fee: 500,
+        recipient: swapperAddress,
+        deadline: timestamp,
+        amountIn: amount,
+        amountOutMinimum: amount.sub(amount.div(100)),
+        sqrtPriceLimitX96: lowPrice
+      });
+}
+
+async function swapToken1ForToken0(router, token0, token1, swapperAddress, amount) {
+    const highPrice = getPriceInX96Format(1.003);
+    const pendingBlock = await network.provider.send("eth_getBlockByNumber", ["pending", false])
+    const timestamp = pendingBlock.timestamp + 10000;
+
+    await router.exactInputSingle({
+        tokenIn: token1.address,
+        tokenOut: token0.address,
+        fee: 500,
+        recipient: swapperAddress,
+        deadline: timestamp,
+        amountIn: amount,
+        amountOutMinimum: amount.sub(amount.div(100)),
+        sqrtPriceLimitX96: highPrice
+    });
+}
+
+/**
+ * Get latest block timestamp
+ * @returns current block timestamp
+ */
+async function getBlockTimestamp() {
+    const latestBlock = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
+    return web3.utils.hexToNumber(latestBlock.timestamp);
+}
+
+/**
+ * Increase time in Hardhat Network
+ */
+async function increaseTime(time) {
+    await network.provider.send("evm_increaseTime", [time]);
+    await network.provider.send("evm_mine");
 }
 
 /**
@@ -84,5 +213,8 @@ function getNumberNoDecimals(amount) {
 }
 
 module.exports = {
-    deploy, deployArgs, getBalance, getTWAP, getPriceInX96Format, getXU3LPBalance, bn, bnDecimal, getNumberNoDecimals
+    deploy, deployArgs, deployWithAbi, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
+    getXU3LPBalance, getPositionBalance, getBufferBalance, printPositionAndBufferBalance,
+    bn, bnDecimal, getNumberNoDecimals, getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0,
+    increaseTime
 }
