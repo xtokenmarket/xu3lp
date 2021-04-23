@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { expect } = require('chai');
-const { bnDecimal, getBalance } = require('../scripts/helpers');
+const { bnDecimal } = require('../scripts/helpers');
 const { deploymentFixture } = require('./fixture');
 
 // Management functions tests for xU3LP
@@ -10,8 +10,10 @@ describe('Contract: xU3LP', async () => {
   beforeEach(async () => {
       ({ xU3LP, dai, usdc } = await deploymentFixture());
       [admin, user1, user2, user3, ...addrs] = await ethers.getSigners();
+      let mintAmount = bnDecimal(100000000);
+      await xU3LP.mintInitial(mintAmount, mintAmount);
       // mint some tokens
-      let mintAmount = bnDecimal(1000000)
+      mintAmount = bnDecimal(1000000)
       await xU3LP.mintWithToken(0, mintAmount);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
@@ -99,6 +101,13 @@ describe('Contract: xU3LP', async () => {
       expect(balanceAfter).to.be.gt(balanceBefore);
     }),
 
+    it('shouldn\'t be able to transfer out LP tokens from the contract', async () => {
+      await expect(xU3LP.withdrawToken(dai.address, admin.address)).
+        to.be.revertedWith('Only non-LP tokens can be withdrawn');
+      await expect(xU3LP.withdrawToken(usdc.address, admin.address)).
+        to.be.revertedWith('Only non-LP tokens can be withdrawn');
+    }),
+
     it('should be able to stake without rebalancing', async () => {
       let bufferBalanceBefore = await xU3LP.getBufferTokenBalance();
       let stakedBalanceBefore = await xU3LP.getStakedTokenBalance();
@@ -131,7 +140,7 @@ describe('Contract: xU3LP', async () => {
       expect(stakedBalanceBefore.amount1).to.be.gt(stakedBalanceAfter.amount1);
     }),
 
-    it('should be able to swap tokens in xU3LP', async () => {
+    it('should be able to swap token 0 for token 1 in xU3LP', async () => {
       let balanceBefore = await xU3LP.getBufferTokenBalance();
 
       // true - swap token 0 for token 1
@@ -142,6 +151,19 @@ describe('Contract: xU3LP', async () => {
 
       expect(balanceAfter.amount0).to.be.lt(balanceBefore.amount0);
       expect(balanceAfter.amount1).to.be.gt(balanceBefore.amount1);
+    }),
+
+    it('should be able to swap token 1 for token 0 in xU3LP', async () => {
+      let balanceBefore = await xU3LP.getBufferTokenBalance();
+
+      // true - swap token 1 for token 0
+      let swapAmount = bnDecimal(10000);
+      await xU3LP.adminSwap(swapAmount, false);
+
+      let balanceAfter = await xU3LP.getBufferTokenBalance();
+
+      expect(balanceAfter.amount0).to.be.gt(balanceBefore.amount0);
+      expect(balanceAfter.amount1).to.be.lt(balanceBefore.amount1);
     })
   })
 })

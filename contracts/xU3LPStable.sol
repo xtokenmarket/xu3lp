@@ -609,7 +609,7 @@ contract xU3LPStable is
                 })
             );
         tokenId = _tokenId;
-        _mintInternal(amount0.add(getAmountInAsset0Terms(amount1)));
+        _mintInternal(getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1)));
         emit PositionInitialized(tickLower, tickUpper);
     }
 

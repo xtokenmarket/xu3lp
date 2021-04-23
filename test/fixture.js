@@ -42,11 +42,6 @@ const deploymentFixture = deployments.createFixture(async () => {
     await dai.approve(xU3LP.address, approveAmount);
     await usdc.approve(xU3LP.address, approveAmount);
 
-    // mint initial - required to initialize the liquidity position
-    // and create the NFT representing it
-    let mintAmount = bnDecimal(100000000);
-    await xU3LP.mintInitial(mintAmount, mintAmount);
-
     let user = signers[1];
 
     await dai.transfer(user.address, bnDecimal(10000000));

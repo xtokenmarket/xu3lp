@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { expect } = require('chai');
-const { bnDecimal, getBalance, swapToken0ForToken1, swapToken1ForToken0, getTokenPrices, increaseTime, getNumberNoDecimals, getTWAP } = require('../scripts/helpers');
+const { bnDecimal, swapToken0ForToken1, swapToken1ForToken0, increaseTime } = require('../scripts/helpers');
 const { deploymentFixture } = require('./fixture');
 
 // Asset price retrieval function tests for xU3LP
@@ -10,6 +10,8 @@ describe('Contract: xU3LP', async () => {
   beforeEach(async () => {
       ({ xU3LP, dai, usdc, router } = await deploymentFixture());
       [admin, user1, user2, user3, ...addrs] = await ethers.getSigners();
+      let mintAmount = bnDecimal(100000000);
+      await xU3LP.mintInitial(mintAmount, mintAmount);
       // approve some tokens for swapping
       let approveAmount = bnDecimal(100000000);
       await dai.approve(router.address, approveAmount);
@@ -17,7 +19,7 @@ describe('Contract: xU3LP', async () => {
   })
 
   describe('Asset prices', async () => {
-    it('should read decreased asset 0 price on swap token0 for token1', async () => {
+    it('should read decreased asset 0 price after swap token0 for token1', async () => {
         let priceBefore = await xU3LP.getAsset0Price();
 
         let swapAmount = bnDecimal(10000000);
@@ -30,7 +32,7 @@ describe('Contract: xU3LP', async () => {
         expect(priceAfter).to.be.lt(priceBefore);
     }),
 
-    it('should read increased asset 0 price on swap token1 for token0', async () => {
+    it('should read increased asset 0 price after swap token1 for token0', async () => {
       let priceBefore = await xU3LP.getAsset0Price();
 
       let swapAmount = bnDecimal(10000000);
@@ -43,7 +45,7 @@ describe('Contract: xU3LP', async () => {
       expect(priceAfter).to.be.gt(priceBefore);
     }),
 
-    it('should read decreased asset 1 price on swap token1 for token0', async () => {
+    it('should read decreased asset 1 price after swap token1 for token0', async () => {
       let priceBefore = await xU3LP.getAsset1Price();
 
       let swapAmount = bnDecimal(10000000);
@@ -56,7 +58,7 @@ describe('Contract: xU3LP', async () => {
       expect(priceAfter).to.be.lt(priceBefore);
     }),
 
-    it('should read increased asset 1 price on swap token0 for token1', async () => {
+    it('should read increased asset 1 price after swap token0 for token1', async () => {
       let priceBefore = await xU3LP.getAsset1Price();
 
       let swapAmount = bnDecimal(10000000);

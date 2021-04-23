@@ -9,9 +9,11 @@ describe('Contract: xU3LP', async () => {
   let bufferPercentage = 5;
 
   beforeEach(async () => {
-		({ dai, usdc, xU3LP } = await deploymentFixture());
-    const signers = await ethers.getSigners();
-    user = signers[1];
+      ({ dai, usdc, xU3LP } = await deploymentFixture());
+      const signers = await ethers.getSigners();
+      user = signers[1];
+      let mintAmount = bnDecimal(100000000);
+      await xU3LP.mintInitial(mintAmount, mintAmount);
   })
 
   describe('Rebalance', async () => {

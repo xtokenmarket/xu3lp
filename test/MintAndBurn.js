@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { deploymentFixture } = require('./fixture');
-const { getXU3LPBalance, bn, bnDecimal, getNumberNoDecimals, getBalance } = require('../scripts/helpers');
+const { getXU3LPBalance, bn, bnDecimal, getNumberNoDecimals, getBalance, getBufferBalance } = require('../scripts/helpers');
 const { expect } = require('chai');
 
 // Mint and burn tests for xU3LP
@@ -11,6 +11,8 @@ describe('Contract: xU3LP', async () => {
 		({ xU3LP, usdc, dai } = await deploymentFixture());
     const signers = await ethers.getSigners();
     [admin, user, user2, ...addrs] = await ethers.getSigners();
+    let mintAmount = bnDecimal(100000000);
+    await xU3LP.mintInitial(mintAmount, mintAmount);
   })
 
   describe('Mint and burn', async () => {
@@ -78,7 +80,7 @@ describe('Contract: xU3LP', async () => {
         expect(fees1Before.add(calculatedFeeAmount)).to.be.eq(fees1After);
     }),
 
-    it('should burn xu3lp tokens from user', async () => {
+    it('should burn xu3lp tokens from user when burning', async () => {
       let mintAmount = 1000000;
       let burnAmount = 100000;
       await xU3LP.connect(user).mintWithToken(0, mintAmount);
@@ -122,6 +124,14 @@ describe('Contract: xU3LP', async () => {
                                                       getNumberNoDecimals(calculatedFeeAmount);
 
       assert(expectedBalanceAfter == balanceAfter.dai);
+    }),
+
+    it('should allow user to burn token even if there\s not enough token balance', async () => {
+      await xU3LP.rebalance();
+      let balance0 = await dai.balanceOf(xU3LP.address);
+      let burnAmount = bnDecimal(9000000);
+      expect(balance0).to.be.lt(burnAmount);
+      await xU3LP.burn(0, burnAmount);
     }),
 
     it('shouldn\'t allow user to burn if he hasn\'t minted', async () => {
