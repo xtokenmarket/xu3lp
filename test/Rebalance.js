@@ -1,7 +1,8 @@
 const assert = require('assert');
 const { expect } = require('chai');
 const { deploymentFixture } = require('./fixture');
-const { getBalance, getBlockTimestamp, bn, bnDecimal, getNumberNoDecimals } = require('../scripts/helpers');
+const { getBalance, getBufferBalance, getBlockTimestamp, 
+        bn, bnDecimal, getNumberNoDecimals } = require('../scripts/helpers');
 
 // Rebalance tests for xU3LP
 describe('Contract: xU3LP', async () => {
@@ -62,6 +63,24 @@ describe('Contract: xU3LP', async () => {
 
         assert(targetBalances.dai == actualBalances.dai);
         assert(targetBalances.usdc == actualBalances.usdc);
+    }),
+
+    it('should be able to rebalance even if we have 0 balance in asset 0', async () => {
+        let amount = bnDecimal(100000);
+        await xU3LP.mintWithToken(1, amount);
+        let balances = await getBufferBalance(xU3LP);
+        expect(balances.dai).to.be.eq(0);
+        // we attempt to swap token 0 for token 1 in the rebalance process
+        await xU3LP.rebalance();
+    }),
+  
+    it('should be able to rebalance even if we have 0 balance in asset 1', async () => {
+        let amount = bnDecimal(100000);
+        await xU3LP.mintWithToken(0, amount);
+        let balances = await getBufferBalance(xU3LP);
+        expect(balances.usdc).to.be.eq(0);
+        // we attempt to swap token 1 for token 0 in the rebalance process
+        await xU3LP.rebalance();
     }),
 
     it('should collect fees after rebalancing to pool (token 0)', async () => {
