@@ -1,28 +1,27 @@
 const { ethers, upgrades } = require('hardhat');
-const { deployArgs, deployWithAbi, printPositionAndBufferBalance, getPriceInX96Format, 
+const { deployArgs, printPositionAndBufferBalance, getPriceInX96Format, 
         getNumberNoDecimals, bnDecimal, getRatio, mineBlocks } = require('./helpers');
+const addresses = require('./uniswapAddresses.json').kovan;
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
-const NFTPositionDescriptor =
- require('@uniswap/v3-periphery/artifacts/contracts/NonFungibleTokenPositionDescriptor.sol/NonFungibleTokenPositionDescriptor.json');
 const NFTPositionManager = 
 require('@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json');
-
 const UniFactory = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json');
 
+/**
+ * Testnet fork script designed to work with Uniswap Kovan deployment
+ * Need to connect to alchemy Kovan node and enable forking in hardhat config before running
+ */
 async function deployXU3LP() {
     const signers = await ethers.getSigners();
-    const admin = signers[0];
-
     const dai = await deployArgs('DAI', 'DAI', 'DAI');
     const usdc = await deployArgs('USDC', 'USDC', 'USDC');
-    const weth = await deployArgs('WETH', 'WETH', 'WETH');
     
-    const uniFactory = await deployWithAbi(UniFactory, admin);
-    const tokenDescriptor = await deployWithAbi(NFTPositionDescriptor, admin, weth.address);
-    const positionManager = await deployWithAbi(NFTPositionManager, admin, 
-                                                uniFactory.address, weth.address, tokenDescriptor.address);
-    const router = await deployWithAbi(swapRouter, admin, uniFactory.address, weth.address);
+    const uniFactory = await ethers.getContractAt(UniFactory.abi, addresses.v3CoreFactoryAddress);
+    const positionManager = await ethers.getContractAt(NFTPositionManager.abi, 
+                                    addresses.nonfungibleTokenPositionManagerAddress);
+    const router = await ethers.getContractAt(swapRouter.abi, 
+                                    addresses.swapRouter);
 
     // 0.997 - 1.003 price
     const lowTick = -60;

@@ -1,6 +1,5 @@
-const assert = require('assert');
 const { expect } = require('chai');
-const { bnDecimal, swapToken0ForToken1, swapToken1ForToken0, increaseTime } = require('../scripts/helpers');
+const { bnDecimal, swapToken0ForToken1, swapToken1ForToken0, increaseTime, mineBlocks } = require('../scripts/helpers');
 const { deploymentFixture } = require('./fixture');
 
 // Asset price retrieval function tests for xU3LP
@@ -86,6 +85,7 @@ describe('Contract: xU3LP', async () => {
       let balanceBefore0Mint = await xU3LP.balanceOf(admin.address);
       let mintAmount = bnDecimal(100000);
       await xU3LP.mintWithToken(0, mintAmount);
+      await mineBlocks(5);
       let balanceAfter0Mint = await xU3LP.balanceOf(admin.address);
       let balance0Received = balanceAfter0Mint.sub(balanceBefore0Mint);
 
@@ -114,6 +114,7 @@ describe('Contract: xU3LP', async () => {
       let balanceBefore0Mint = await xU3LP.balanceOf(admin.address);
       let mintAmount = bnDecimal(100000);
       await xU3LP.mintWithToken(0, mintAmount);
+      await mineBlocks(5);
       let balanceAfter0Mint = await xU3LP.balanceOf(admin.address);
       let balance0Received = balanceAfter0Mint.sub(balanceBefore0Mint);
 
@@ -140,12 +141,15 @@ describe('Contract: xU3LP', async () => {
 
       // mint some tokens to be able to burn
       await xU3LP.mintWithToken(0, bnDecimal(10000000));
+      await mineBlocks(5);
       await xU3LP.mintWithToken(1, bnDecimal(10000000));
+      await mineBlocks(5);
 
       // calculate how much token0 tokens are received on asset 0 burn
       let balanceBefore0Burn = await dai.balanceOf(admin.address);
       let burnAmount = bnDecimal(100000);
       await xU3LP.burn(0, burnAmount);
+      await mineBlocks(5);
       let balanceAfter0Burn = await dai.balanceOf(admin.address);
       let balance0Received = balanceAfter0Burn.sub(balanceBefore0Burn);
 
@@ -172,12 +176,15 @@ describe('Contract: xU3LP', async () => {
 
       // mint some tokens to be able to burn
       await xU3LP.mintWithToken(0, bnDecimal(10000000));
+      await mineBlocks(5);
       await xU3LP.mintWithToken(1, bnDecimal(10000000));
+      await mineBlocks(5);
 
       // calculate how much token0 tokens are received on asset 0 burn
       let balanceBefore0Burn = await dai.balanceOf(admin.address);
       let burnAmount = bnDecimal(100000);
       await xU3LP.burn(0, burnAmount);
+      await mineBlocks(5);
       let balanceAfter0Burn = await dai.balanceOf(admin.address);
       let balance0Received = balanceAfter0Burn.sub(balanceBefore0Burn);
 

@@ -11,7 +11,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
@@ -221,15 +220,8 @@ contract xU3LPStable is
 
     // Get total balance in the position
     function getStakedBalance() public view returns (uint256) {
-        uint128 liquidity = getPositionLiquidity();
-        uint160 price = getPoolPrice();
         (uint256 amount0, uint256 amount1) =
-            LiquidityAmounts.getAmountsForLiquidity(
-                price,
-                priceLower,
-                priceUpper,
-                liquidity
-            );
+            getAmountsForLiquidity(getPositionLiquidity());
         return amount0.add(getAmountInAsset0Terms(amount1));
     }
 
@@ -275,14 +267,7 @@ contract xU3LPStable is
         view
         returns (uint256 amount0, uint256 amount1)
     {
-        uint128 liquidity = getPositionLiquidity();
-        uint160 price = getPoolPrice();
-        (amount0, amount1) = LiquidityAmounts.getAmountsForLiquidity(
-            price,
-            priceLower,
-            priceUpper,
-            liquidity
-        );
+        return getAmountsForLiquidity(getPositionLiquidity());
     }
 
     // Get wanted xU3LP contract token balance - 5% of NAV
@@ -326,12 +311,12 @@ contract xU3LPStable is
     }
 
     function _provideOrRemoveLiquidity() private {
-        uint256 bufferBalance = getBufferBalance();
-        uint256 targetBalance = getTargetBufferBalance();
         (uint256 bufferToken0Balance, uint256 bufferToken1Balance) =
             getBufferTokenBalance();
         (uint256 targetToken0Balance, uint256 targetToken1Balance) =
             getTargetBufferTokenBalance();
+        uint256 bufferBalance = bufferToken0Balance.add(bufferToken1Balance);
+        uint256 targetBalance = targetToken0Balance.add(targetToken1Balance);
 
         uint256 _amount0 =
             Utils.subAbs(bufferToken0Balance, targetToken0Balance);
@@ -361,15 +346,7 @@ contract xU3LPStable is
     }
 
     function _unstake(uint256 amount0, uint256 amount1) private {
-        uint160 price = getPoolPrice();
-        uint128 liquidityAmount =
-            LiquidityAmounts.getLiquidityForAmounts(
-                price,
-                priceLower,
-                priceUpper,
-                amount0,
-                amount1
-            );
+        uint128 liquidityAmount = getLiquidityForAmounts(amount0, amount1);
 
         (uint256 _amount0, uint256 _amount1) =
             positionManager.decreaseLiquidity(
@@ -422,22 +399,10 @@ contract xU3LPStable is
         uint256 amount0ToMint,
         uint256 amount1ToMint
     ) private returns (uint256 amount0, uint256 amount1) {
-        uint160 price = getPoolPrice();
         uint128 liquidityAmount =
-            LiquidityAmounts.getLiquidityForAmounts(
-                price,
-                priceLower,
-                priceUpper,
-                amount0ToMint,
-                amount1ToMint
-            );
+            getLiquidityForAmounts(amount0ToMint, amount1ToMint);
         (uint256 amount0Minted, uint256 amount1Minted) =
-            LiquidityAmounts.getAmountsForLiquidity(
-                price,
-                priceLower,
-                priceUpper,
-                liquidityAmount
-            );
+            getAmountsForLiquidity(liquidityAmount);
         if (
             amount0Minted <
             amount0ToMint.sub(amount0ToMint.div(MINT_BURN_SLIPPAGE)) ||
@@ -480,24 +445,8 @@ contract xU3LPStable is
             checkIfAmountsMatchAndSwap(_amount0, _amount1);
 
         // mint the position NFT and deposit the liquidity
-        (uint256 _tokenId, , , ) =
-            positionManager.mint(
-                INonfungiblePositionManager.MintParams({
-                    token0: address(token0),
-                    token1: address(token1),
-                    fee: POOL_FEE,
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    amount0Desired: amount0,
-                    amount1Desired: amount1,
-                    amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                    amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                    recipient: address(this),
-                    deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
-                })
-            );
         // set new NFT token id
-        tokenId = _tokenId;
+        tokenId = createPosition(amount0, amount1);
         emit PositionMigrated(newTickLower, newTickUpper);
     }
 
@@ -506,15 +455,8 @@ contract xU3LPStable is
         private
         returns (uint256 _amount0, uint256 _amount1)
     {
-        uint160 price = getPoolPrice();
         uint128 liquidity = getPositionLiquidity();
-        (uint256 amount0, uint256 amount1) =
-            LiquidityAmounts.getAmountsForLiquidity(
-                price,
-                priceLower,
-                priceUpper,
-                liquidity
-            );
+        (uint256 amount0, uint256 amount1) = getAmountsForLiquidity(liquidity);
         (_amount0, _amount1) = positionManager.decreaseLiquidity(
             INonfungiblePositionManager.DecreaseLiquidityParams({
                 tokenId: tokenId,
@@ -592,25 +534,35 @@ contract xU3LPStable is
         if (amount1 > 0) {
             token1.transferFrom(msg.sender, address(this), amount1);
         }
-        (uint256 _tokenId, , , ) =
-            positionManager.mint(
-                INonfungiblePositionManager.MintParams({
-                    token0: address(token0),
-                    token1: address(token1),
-                    fee: POOL_FEE,
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    amount0Desired: amount0,
-                    amount1Desired: amount1,
-                    amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                    amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                    recipient: address(this),
-                    deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
-                })
-            );
-        tokenId = _tokenId;
-        _mintInternal(getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1)));
+        tokenId = createPosition(amount0, amount1);
+        _mintInternal(
+            getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1))
+        );
         emit PositionInitialized(tickLower, tickUpper);
+    }
+
+    /**
+     * Creates the NFT token representing the pool position
+     */
+    function createPosition(uint256 amount0, uint256 amount1)
+        private
+        returns (uint256 _tokenId)
+    {
+        (_tokenId, , , ) = positionManager.mint(
+            INonfungiblePositionManager.MintParams({
+                token0: address(token0),
+                token1: address(token1),
+                fee: POOL_FEE,
+                tickLower: tickLower,
+                tickUpper: tickUpper,
+                amount0Desired: amount0,
+                amount1Desired: amount1,
+                amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
+                amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
+                recipient: address(this),
+                deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+            })
+        );
     }
 
     /*
@@ -811,8 +763,8 @@ contract xU3LPStable is
     }
 
     /**
-     * Swap tokens in xU3LP so as to keep a ratio which is required for depositing in the pool
-     * @dev TODO: Handle not enough balances for swap in xU3LP
+     * Swap tokens in xU3LP so as to keep a ratio which is required for 
+     * depositing/withdrawing liquidity from the pool
      */
     function restoreTokenRatios(
         uint256 amount0ToMint,
@@ -831,22 +783,33 @@ contract xU3LPStable is
             (amount0, amount1) = (amount0ToMint, amount1ToMint);
             return (amount0, amount1);
         }
+        uint256 swapAmountWithSlippage =
+            swapAmount.add(swapAmount.div(SWAP_SLIPPAGE));
 
         uint256 mul1 = amount0ToMint.mul(amount1Minted);
         uint256 mul2 = amount1ToMint.mul(amount0Minted);
+        (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
 
         if (mul1 > mul2) {
-            swapToken0ForToken1(
-                swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
-                swapAmount
-            );
+            if (balance0 < swapAmountWithSlippage) {
+                checkIfAmountsMatchAndSwap(
+                    swapAmountWithSlippage,
+                    swapAmountWithSlippage
+                );
+                _unstake(swapAmountWithSlippage, swapAmountWithSlippage);
+            }
+            swapToken0ForToken1(swapAmountWithSlippage, swapAmount);
             amount0 = amount0ToMint.sub(swapAmount);
             amount1 = amount1ToMint.add(swapAmount);
         } else if (mul1 < mul2) {
-            swapToken1ForToken0(
-                swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
-                swapAmount
-            );
+            if (balance1 < swapAmountWithSlippage) {
+                checkIfAmountsMatchAndSwap(
+                    swapAmountWithSlippage,
+                    swapAmountWithSlippage
+                );
+                _unstake(swapAmountWithSlippage, swapAmountWithSlippage);
+            }
+            swapToken1ForToken0(swapAmountWithSlippage, swapAmount);
             amount0 = amount0ToMint.add(swapAmount);
             amount1 = amount1ToMint.sub(swapAmount);
         }
@@ -894,6 +857,33 @@ contract xU3LPStable is
         (int56[] memory prices, ) = pool.observe(secondsArray);
 
         return Utils.getTWAP(prices, TWAP_SECONDS);
+    }
+
+    function getAmountsForLiquidity(uint128 liquidity)
+        private
+        view
+        returns (uint256 amount0, uint256 amount1)
+    {
+        (amount0, amount1) = LiquidityAmounts.getAmountsForLiquidity(
+            getPoolPrice(),
+            priceLower,
+            priceUpper,
+            liquidity
+        );
+    }
+
+    function getLiquidityForAmounts(uint256 amount0, uint256 amount1)
+        private
+        view
+        returns (uint128 liquidity)
+    {
+        liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            getPoolPrice(),
+            priceLower,
+            priceUpper,
+            amount0,
+            amount1
+        );
     }
 
     /**

@@ -1,6 +1,6 @@
 const { ethers, upgrades } = require('hardhat');
 const { deployArgs, deployWithAbi, getPriceInX96Format, getRatio, getNumberNoDecimals,
-        bn, bnDecimal, printPositionAndBufferBalance } = require('./helpers');
+        bnDecimal, printPositionAndBufferBalance, mineBlocks } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =
@@ -59,7 +59,9 @@ async function migratePosition() {
     // minting
     mintAmount = bnDecimal(1000000);
     await xU3LP.mintWithToken(0, mintAmount);
+    await mineBlocks(5);
     await xU3LP.mintWithToken(1, mintAmount);
+    await mineBlocks(5);
     console.log('minting 1 000 000 DAI and USDC successful');
     await printPositionAndBufferBalance(xU3LP);
 
@@ -81,7 +83,9 @@ async function migratePosition() {
     mintAmount = bnDecimal(1000000);
 
     await xU3LP.mintWithToken(0, mintAmount);
+    await mineBlocks(5);
     await xU3LP.mintWithToken(1, mintAmount);
+    await mineBlocks(5);
     console.log('minting 1 000 000 DAI and USDC successful');
     await printPositionAndBufferBalance(xU3LP);
     await getRatio(xU3LP);
@@ -95,11 +99,13 @@ async function migratePosition() {
     // burning
     burnAmount = bnDecimal(100000);
     await xU3LP.burn(0, burnAmount);
+    await mineBlocks(5);
     console.log('burning 100 000 DAI successful');
     await printPositionAndBufferBalance(xU3LP);
 
     burnAmount = bnDecimal(300000);
     await xU3LP.burn(1, burnAmount);
+    await mineBlocks(5);
     console.log('burning 300 000 USDC successful');
     await printPositionAndBufferBalance(xU3LP);
 
@@ -111,7 +117,9 @@ async function migratePosition() {
 
     // minting
     await xU3LP.mintWithToken(0, mintAmount);
+    await mineBlocks(5);
     await xU3LP.mintWithToken(1, mintAmount);
+    await mineBlocks(5);
     console.log('minting 10 000 DAI and USDC successful');
 
     await xU3LP.rebalance();
@@ -121,6 +129,7 @@ async function migratePosition() {
     // burning - triggering swap (not enough DAI balance)
     burnAmount = bnDecimal(9400000);
     await xU3LP.burn(0, burnAmount);
+    await mineBlocks(5);
     console.log('burning 9400000 DAI successful');
     await printPositionAndBufferBalance(xU3LP);
     await getRatio(xU3LP);
