@@ -12,7 +12,7 @@ module.exports = {
   networks: {
     hardhat: {
       // comment out for local testing
-			// uncomment for mainnet fork script
+			// uncomment for fork script
 			// forking: {
 			// 	url: process.env.ALCHEMY_URL
 			// }
