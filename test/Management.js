@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { expect } = require('chai');
-const { bnDecimal } = require('../scripts/helpers');
+const { bnDecimal, mineBlocks } = require('../scripts/helpers');
 const { deploymentFixture } = require('./fixture');
 
 // Management functions tests for xU3LP
@@ -15,7 +15,9 @@ describe('Contract: xU3LP', async () => {
       // mint some tokens
       mintAmount = bnDecimal(1000000)
       await xU3LP.mintWithToken(0, mintAmount);
+      await mineBlocks(5);
       await xU3LP.mintWithToken(1, mintAmount);
+      await mineBlocks(5);
       await xU3LP.rebalance();
       // set managers
       await xU3LP.setManager(user1.address);
@@ -26,6 +28,7 @@ describe('Contract: xU3LP', async () => {
     it('should be able to rebalance', async () => {
         let mintAmount = bnDecimal(1000000)
         await xU3LP.mintWithToken(0, mintAmount);
+        await mineBlocks(5);
         await xU3LP.mintWithToken(1, mintAmount);
         await xU3LP.rebalance();
         assert(true);

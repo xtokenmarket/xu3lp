@@ -1,6 +1,7 @@
 const assert = require('assert');
 const { deploymentFixture } = require('./fixture');
-const { getXU3LPBalance, bn, bnDecimal, getNumberNoDecimals, getBalance, getBufferBalance } = require('../scripts/helpers');
+const { getXU3LPBalance, bn, bnDecimal, getNumberNoDecimals,
+  getBalance, mineBlocks } = require('../scripts/helpers');
 const { expect } = require('chai');
 
 // Mint and burn tests for xU3LP
@@ -39,6 +40,7 @@ describe('Contract: xU3LP', async () => {
         let balanceBefore = await getBalance(dai, usdc, xU3LP.address);
         let amount = bnDecimal(1000000);
         await xU3LP.connect(user).mintWithToken(0, amount);
+        await mineBlocks(5);
         await xU3LP.connect(user).mintWithToken(1, amount);
         let balanceAfter = await getBalance(dai, usdc, xU3LP.address);
         assert(balanceBefore.dai + getNumberNoDecimals(amount) == balanceAfter.dai);
@@ -64,6 +66,7 @@ describe('Contract: xU3LP', async () => {
 
         let amount = bnDecimal(1000000);
         await xU3LP.connect(user).mintWithToken(0, amount);
+        await mineBlocks(5);
         await xU3LP.connect(user).mintWithToken(1, amount);
 
         let fees0After = await xU3LP.withdrawableToken0Fees();
@@ -84,6 +87,7 @@ describe('Contract: xU3LP', async () => {
       let mintAmount = 1000000;
       let burnAmount = 100000;
       await xU3LP.connect(user).mintWithToken(0, mintAmount);
+      await mineBlocks(5);
 
       await xU3LP.connect(user).burn(0, burnAmount);
       
@@ -109,6 +113,7 @@ describe('Contract: xU3LP', async () => {
       let mintAmount = bnDecimal(1000000);
       let burnAmount = bnDecimal(900000);
       await xU3LP.connect(user).mintWithToken(0, mintAmount);
+      await mineBlocks(5);
 
       // burn
       let balanceBefore = await getBalance(dai, usdc, user.address);
@@ -126,7 +131,7 @@ describe('Contract: xU3LP', async () => {
       assert(expectedBalanceAfter == balanceAfter.dai);
     }),
 
-    it('should allow user to burn token even if there\s not enough token balance', async () => {
+    it('should allow user to burn token even if there\'s not enough token balance', async () => {
       await xU3LP.rebalance();
       let balance0 = await dai.balanceOf(xU3LP.address);
       let burnAmount = bnDecimal(9000000);
@@ -149,12 +154,15 @@ describe('Contract: xU3LP', async () => {
       let amount = bnDecimal(1000000);
       let burnAmount = bnDecimal(900000);
       await xU3LP.connect(user).mintWithToken(0, amount);
+      await mineBlocks(5);
       await xU3LP.connect(user).mintWithToken(1, amount);
+      await mineBlocks(5);
       
       let fees0Before = await xU3LP.withdrawableToken0Fees();
       let fees1Before = await xU3LP.withdrawableToken1Fees();
 
       await xU3LP.connect(user).burn(0, burnAmount);
+      await mineBlocks(5);
       await xU3LP.connect(user).burn(1, burnAmount);
 
       let fees0After = await xU3LP.withdrawableToken0Fees();

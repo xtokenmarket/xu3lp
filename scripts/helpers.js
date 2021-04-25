@@ -1,4 +1,4 @@
-const { ethers } = require("hardhat");
+const { ethers, network } = require("hardhat");
 
 
 /**
@@ -168,6 +168,16 @@ async function increaseTime(time) {
 }
 
 /**
+ * Mine several blocks in network
+ * @param {Number} blockCount how many blocks to mine
+ */
+async function mineBlocks(blockCount) {
+    for(let i = 0 ; i < blockCount ; ++i) {
+        await network.provider.send("evm_mine");
+    }
+}
+
+/**
  * Return actual twap price from ABDK 64.64 representation
  * Used with getAsset0Price()
  */
@@ -216,5 +226,5 @@ module.exports = {
     deploy, deployArgs, deployWithAbi, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
     getXU3LPBalance, getPositionBalance, getBufferBalance, printPositionAndBufferBalance,
     bn, bnDecimal, getNumberNoDecimals, getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0,
-    increaseTime
+    increaseTime, mineBlocks
 }

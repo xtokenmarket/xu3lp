@@ -6,7 +6,7 @@ pragma solidity ^0.7.6;
  */
 contract BlockLock {
     // how many blocks are the functions locked for
-    uint256 private constant BLOCK_LOCK_COUNT = 1;
+    uint256 private constant BLOCK_LOCK_COUNT = 6;
     // last block for which this address is timelocked
     mapping(address => uint256) public lastLockedBlock;
 

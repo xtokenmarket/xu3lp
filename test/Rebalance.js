@@ -2,7 +2,7 @@ const assert = require('assert');
 const { expect } = require('chai');
 const { deploymentFixture } = require('./fixture');
 const { getBalance, getBufferBalance, getBlockTimestamp, 
-        bn, bnDecimal, getNumberNoDecimals } = require('../scripts/helpers');
+        bn, bnDecimal, getNumberNoDecimals, mineBlocks } = require('../scripts/helpers');
 
 // Rebalance tests for xU3LP
 describe('Contract: xU3LP', async () => {
@@ -45,6 +45,7 @@ describe('Contract: xU3LP', async () => {
 
         // Burn some so there is < 5% in xu3lp
         await xU3LP.burn(0, bnDecimal(100000));
+        await mineBlocks(5);
         await xU3LP.burn(1, bnDecimal(100000));
 
         // rebalance -> less than 5% left in xu3lp, so some needs to be withdrawn from the pool
@@ -87,6 +88,7 @@ describe('Contract: xU3LP', async () => {
         await xU3LP.rebalance();
 
         await xU3LP.mintWithToken(0, bnDecimal(100000));
+        await mineBlocks(5);
         await xU3LP.mintWithToken(1, bnDecimal(100000));
         let feesBefore = await xU3LP.withdrawableToken0Fees();
 
@@ -104,6 +106,7 @@ describe('Contract: xU3LP', async () => {
         await xU3LP.rebalance();
 
         await xU3LP.mintWithToken(0, bnDecimal(100000));
+        await mineBlocks(5);
         await xU3LP.mintWithToken(1, bnDecimal(100000));
         let feesBefore = await xU3LP.withdrawableToken1Fees();
 
@@ -121,6 +124,7 @@ describe('Contract: xU3LP', async () => {
         await xU3LP.rebalance();
 
         await xU3LP.burn(0, bnDecimal(10000));
+        await mineBlocks(5);
         await xU3LP.burn(1, bnDecimal(10000));
         let feesBefore = await xU3LP.withdrawableToken0Fees();
 
@@ -138,6 +142,7 @@ describe('Contract: xU3LP', async () => {
         await xU3LP.rebalance();
         
         await xU3LP.burn(0, bnDecimal(10000));
+        await mineBlocks(5);
         await xU3LP.burn(1, bnDecimal(10000));
         let feesBefore = await xU3LP.withdrawableToken1Fees();
 

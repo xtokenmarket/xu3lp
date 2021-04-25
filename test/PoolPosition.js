@@ -1,4 +1,3 @@
-const assert = require('assert');
 const { expect } = require('chai');
 const { bnDecimal } = require('../scripts/helpers');
 const { deploymentFixture } = require('./fixture');

@@ -1,5 +1,5 @@
 const { ethers, upgrades } = require('hardhat');
-const { deployArgs, deployWithAbi, getTWAP, getPriceInX96Format, 
+const { deployArgs, deployWithAbi, getPriceInX96Format, mineBlocks,
         getXU3LPBalance, bnDecimal, getNumberNoDecimals, getTokenPrices } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
@@ -72,10 +72,12 @@ async function testTWAP() {
     // Mint some balance so as to have left in the contract when burning
     mintAmount = bnDecimal(1000000);
     await xU3LP.mintWithToken(0, mintAmount);
+    await mineBlocks(5);
 
     // Mint at equal token proportion
     // Mint 1 000 000 tokens
     await xU3LP.connect(user1).mintWithToken(0, mintAmount);
+    await mineBlocks(5);
     let xU3LPbalance = await getXU3LPBalance(xU3LP, user1.address);
     console.log('balance after minting 1M DAI:');
     console.log('xU3LP balance:', getNumberNoDecimals(xU3LPbalance));
@@ -86,6 +88,7 @@ async function testTWAP() {
     console.log('withdrawable token fees:', getNumberNoDecimals(fees));
     let burnAmount = xU3LPbalance;
     await xU3LP.connect(user1).burn(0, burnAmount);
+    await mineBlocks(5);
     xU3LPbalance = await getXU3LPBalance(xU3LP, user1.address);
     console.log(`balance after burning ${getNumberNoDecimals(burnAmount)} xU3LP for DAI:`);
     console.log('xU3LP balance:', getNumberNoDecimals(xU3LPbalance));
@@ -121,6 +124,7 @@ async function testTWAP() {
     // Mint 1 000 000 tokens
     mintAmount = bnDecimal(1000000);
     await xU3LP.connect(user1).mintWithToken(0, mintAmount);
+    await mineBlocks(5);
     xU3LPbalance = await getXU3LPBalance(xU3LP, user1.address);
     console.log('balance after minting 1M DAI:');
     console.log('xU3LP balance:', getNumberNoDecimals(xU3LPbalance));
@@ -130,6 +134,7 @@ async function testTWAP() {
     console.log('withdrawable token fees:', getNumberNoDecimals(fees));
     burnAmount = xU3LPbalance;
     await xU3LP.connect(user1).burn(0, burnAmount);
+    await mineBlocks(5);
     xU3LPbalance = await getXU3LPBalance(xU3LP, user1.address);
     console.log(`balance after burning ${getNumberNoDecimals(burnAmount)} xU3LP for DAI:`);
     console.log('xU3LP balance:', getNumberNoDecimals(xU3LPbalance));
@@ -161,6 +166,7 @@ async function testTWAP() {
     // Mint 1 000 000 tokens
     mintAmount = bnDecimal(1000000);
     await xU3LP.connect(user1).mintWithToken(0, mintAmount);
+    await mineBlocks(5);
     xU3LPbalance = await getXU3LPBalance(xU3LP, user1.address);
     console.log('balance after minting 1M DAI:');
     console.log('xU3LP balance:', getNumberNoDecimals(xU3LPbalance));
@@ -170,6 +176,7 @@ async function testTWAP() {
     console.log('withdrawable token fees:', getNumberNoDecimals(fees));
     burnAmount = xU3LPbalance;
     await xU3LP.connect(user1).burn(0, burnAmount);
+    await mineBlocks(5);
     xU3LPbalance = await getXU3LPBalance(xU3LP, user1.address);
     console.log(`balance after burning ${getNumberNoDecimals(burnAmount)} xU3LP for DAI:`);
     console.log('xU3LP balance:', getNumberNoDecimals(xU3LPbalance));
