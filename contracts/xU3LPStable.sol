@@ -281,6 +281,10 @@ contract xU3LPStable is
         (uint256 poolAmount0, uint256 poolAmount1) = getStakedTokenBalance();
         amount0 = bufferAmount0.add(poolAmount0).div(BUFFER_TARGET);
         amount1 = bufferAmount1.add(poolAmount1).div(BUFFER_TARGET);
+        // Keep 50:50 ratio
+        uint256 targetTotalAmount = amount0.add(amount1);
+        amount0 = targetTotalAmount.div(2);
+        amount1 = amount0;
     }
 
     // Check how much xU3LP tokens will be minted
@@ -792,22 +796,22 @@ contract xU3LPStable is
 
         if (mul1 > mul2) {
             if (balance0 < swapAmountWithSlippage) {
-                checkIfAmountsMatchAndSwap(
+                (uint256 unstakeAmount0, uint256 unstakeAmount1) = checkIfAmountsMatchAndSwap(
                     swapAmountWithSlippage,
                     swapAmountWithSlippage
                 );
-                _unstake(swapAmountWithSlippage, swapAmountWithSlippage);
+                _unstake(unstakeAmount0, unstakeAmount1);
             }
             swapToken0ForToken1(swapAmountWithSlippage, swapAmount);
             amount0 = amount0ToMint.sub(swapAmount);
             amount1 = amount1ToMint.add(swapAmount);
         } else if (mul1 < mul2) {
             if (balance1 < swapAmountWithSlippage) {
-                checkIfAmountsMatchAndSwap(
+                (uint256 unstakeAmount0, uint256 unstakeAmount1) = checkIfAmountsMatchAndSwap(
                     swapAmountWithSlippage,
                     swapAmountWithSlippage
                 );
-                _unstake(swapAmountWithSlippage, swapAmountWithSlippage);
+                _unstake(unstakeAmount0, unstakeAmount1);
             }
             swapToken1ForToken0(swapAmountWithSlippage, swapAmount);
             amount0 = amount0ToMint.add(swapAmount);
