@@ -99,8 +99,13 @@ contract xU3LPStable is
         tickUpper = _tickUpper;
         priceLower = TickMath.getSqrtRatioAtTick(_tickLower);
         priceUpper = TickMath.getSqrtRatioAtTick(_tickUpper);
-        token0 = _token0;
-        token1 = _token1;
+        if(_token0 > _token1) {
+            token0 = _token1;
+            token1 = _token0;
+        } else {
+            token0 = _token0;
+            token1 = _token1;
+        }
         pool = _pool;
         router = _router;
         positionManager = _positionManager;
@@ -249,15 +254,22 @@ contract xU3LPStable is
         view
         returns (uint256 amount0, uint256 amount1)
     {
+        return (getBufferToken0Balance(), getBufferToken1Balance());
+    }
+
+    function getBufferToken0Balance() public view returns (uint256 amount0) {
         int256 balance0 =
             int256(token0.balanceOf(address(this))) -
                 int256(withdrawableToken0Fees);
+        if (balance0 < 0) balance0 = 0;
+        amount0 = uint256(balance0);
+    }
+
+    function getBufferToken1Balance() public view returns (uint256 amount1) {
         int256 balance1 =
             int256(token1.balanceOf(address(this))) -
-                int256(withdrawableToken1Fees);
-        if (balance0 < 0) balance0 = 0;
+                int256(withdrawableToken0Fees);
         if (balance1 < 0) balance1 = 0;
-        amount0 = uint256(balance0);
         amount1 = uint256(balance1);
     }
 
@@ -328,6 +340,10 @@ contract xU3LPStable is
             Utils.subAbs(bufferToken1Balance, targetToken1Balance);
         (uint256 amount0, uint256 amount1) =
             checkIfAmountsMatchAndSwap(_amount0, _amount1);
+        
+        if(amount0 == 0 || amount1 == 0) {
+            return;
+        }
 
         if (bufferBalance > targetBalance) {
             _stake(amount0, amount1);
@@ -403,10 +419,8 @@ contract xU3LPStable is
         uint256 amount0ToMint,
         uint256 amount1ToMint
     ) private returns (uint256 amount0, uint256 amount1) {
-        uint128 liquidityAmount =
-            getLiquidityForAmounts(amount0ToMint, amount1ToMint);
         (uint256 amount0Minted, uint256 amount1Minted) =
-            getAmountsForLiquidity(liquidityAmount);
+            calculatePoolMintedAmounts(amount0ToMint, amount1ToMint);
         if (
             amount0Minted <
             amount0ToMint.sub(amount0ToMint.div(MINT_BURN_SLIPPAGE)) ||
@@ -622,7 +636,7 @@ contract xU3LPStable is
         uint256 _burnFeeDivisor,
         uint256 _claimFeeDivisor
     ) private {
-        require(_mintFeeDivisor == 0 || _mintFeeDivisor >= 50, "Invalid fee");
+        require(_mintFeeDivisor == 0 || _mintFeeDivisor >= 100, "Invalid fee");
         require(_burnFeeDivisor == 0 || _burnFeeDivisor >= 100, "Invalid fee");
         require(_claimFeeDivisor >= 25, "Invalid fee");
         feeDivisors.mintFee = _mintFeeDivisor;
@@ -784,8 +798,7 @@ contract xU3LPStable is
                 amount1Minted
             );
         if (swapAmount == 0) {
-            (amount0, amount1) = (amount0ToMint, amount1ToMint);
-            return (amount0, amount1);
+            return (amount0ToMint, amount1ToMint);
         }
         uint256 swapAmountWithSlippage =
             swapAmount.add(swapAmount.div(SWAP_SLIPPAGE));
@@ -796,23 +809,45 @@ contract xU3LPStable is
 
         if (mul1 > mul2) {
             if (balance0 < swapAmountWithSlippage) {
-                (uint256 unstakeAmount0, uint256 unstakeAmount1) = checkIfAmountsMatchAndSwap(
+                // Not enough balance to swap
+                (uint256 unstakeAmount0, uint256 unstakeAmount1) = calculatePoolMintedAmounts(
                     swapAmountWithSlippage,
                     swapAmountWithSlippage
                 );
-                _unstake(unstakeAmount0, unstakeAmount1);
+                do {
+                    _unstake(unstakeAmount0, unstakeAmount1);
+                    swapToken1ForToken0(
+                        unstakeAmount1.add(unstakeAmount1.div(SWAP_SLIPPAGE)), 
+                        unstakeAmount1);
+                    balance0 = getBufferToken0Balance();
+                } while(balance0 < swapAmountWithSlippage);
+                // balances are not the same as before, so go back to rebalancing
+                _provideOrRemoveLiquidity();
+                return (0, 0);
             }
+            // Swap tokens
             swapToken0ForToken1(swapAmountWithSlippage, swapAmount);
             amount0 = amount0ToMint.sub(swapAmount);
             amount1 = amount1ToMint.add(swapAmount);
         } else if (mul1 < mul2) {
             if (balance1 < swapAmountWithSlippage) {
-                (uint256 unstakeAmount0, uint256 unstakeAmount1) = checkIfAmountsMatchAndSwap(
+                // Not enough balance to swap
+                (uint256 unstakeAmount0, uint256 unstakeAmount1) = calculatePoolMintedAmounts(
                     swapAmountWithSlippage,
                     swapAmountWithSlippage
                 );
-                _unstake(unstakeAmount0, unstakeAmount1);
+                do {
+                    _unstake(unstakeAmount0, unstakeAmount1);
+                    swapToken0ForToken1(
+                        unstakeAmount0.add(unstakeAmount0.div(SWAP_SLIPPAGE)), 
+                        unstakeAmount0);
+                    balance1 = getBufferToken1Balance();
+                } while(balance1 < swapAmountWithSlippage);
+                // balances are not the same as before, so go back to rebalancing
+                _provideOrRemoveLiquidity();
+                return (0, 0);
             }
+            // Swap tokens
             swapToken1ForToken0(swapAmountWithSlippage, swapAmount);
             amount0 = amount0ToMint.add(swapAmount);
             amount1 = amount1ToMint.sub(swapAmount);
@@ -861,6 +896,17 @@ contract xU3LPStable is
         (int56[] memory prices, ) = pool.observe(secondsArray);
 
         return Utils.getTWAP(prices, TWAP_SECONDS);
+    }
+
+    /**
+     * Calculates the amounts deposited/withdrawn from the pool
+     * amount0, amount1 - amounts to deposit/withdraw
+     * amount0Minted, amount1Minted - actual amounts which can be deposited
+     */
+    function calculatePoolMintedAmounts(uint256 amount0, uint256 amount1) private view
+    returns (uint256 amount0Minted, uint256 amount1Minted) {
+        uint128 liquidityAmount = getLiquidityForAmounts(amount0, amount1);
+        (amount0Minted, amount1Minted) = getAmountsForLiquidity(liquidityAmount);
     }
 
     function getAmountsForLiquidity(uint128 liquidity)

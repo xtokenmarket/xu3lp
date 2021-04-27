@@ -192,7 +192,7 @@ library ABDKMath64x64 {
      * @param y unsigned 256-bit integer number
      * @return unsigned 64.64-bit fixed point number
      */
-    function divuu(uint256 x, uint256 y) private pure returns (uint128) {
+    function divuu(uint256 x, uint256 y) internal pure returns (uint128) {
         require(y != 0);
 
         uint256 result;
