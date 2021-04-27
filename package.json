@@ -11,7 +11,6 @@
   },
   "devDependencies": {
     "@nomiclabs/hardhat-waffle": "^2.0.1",
-    "@openzeppelin/hardhat-upgrades": "^1.6.0",
     "ethereum-waffle": "^3.3.0",
     "hardhat": "^2.2.0",
     "prettier": "^2.2.1",
@@ -23,7 +22,7 @@
     "@openzeppelin/contracts": "3.4.1-solc-0.7-2",
     "@openzeppelin/contracts-upgradeable": "3.4.1-solc-0.7-2",
     "@uniswap/v3-core": "^1.0.0-rc.2",
-    "@uniswap/v3-periphery": "^1.0.0-beta.21",
+    "@uniswap/v3-periphery": "^1.0.0-beta.22",
     "chai": "^4.3.4",
     "dotenv": "^8.2.0",
     "ethers": "^5.1.0",

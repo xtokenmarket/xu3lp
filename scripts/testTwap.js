@@ -1,5 +1,5 @@
-const { ethers, upgrades } = require('hardhat');
-const { deployArgs, deployWithAbi, getPriceInX96Format, mineBlocks,
+const { ethers } = require('hardhat');
+const { deploy, deployArgs, deployWithAbi, getPriceInX96Format, mineBlocks,
         getXU3LPBalance, bnDecimal, getNumberNoDecimals, getTokenPrices } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
@@ -15,8 +15,7 @@ const UniFactory = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Factor
 // Using xU3LP.getAsset0Price()
 // After making various swaps using the router
 async function testTWAP() {
-    const signers = await ethers.getSigners();
-    const admin = signers[0];
+    const [admin, user1, proxyAdmin] = await ethers.getSigners();
 
     const dai = await deployArgs('DAI', 'DAI', 'DAI');
     const usdc = await deployArgs('USDC', 'USDC', 'USDC');
@@ -39,9 +38,11 @@ async function testTWAP() {
     await positionManager.createAndInitializePoolIfNecessary(dai.address, usdc.address, 500, price);
     const poolAddress = await uniFactory.getPool(dai.address, usdc.address, 500);
     
-    const XU3LP = await ethers.getContractFactory("xU3LPStable");
-    const xU3LP = await upgrades.deployProxy(XU3LP, ["xU3LP", lowTick, highTick, dai.address, usdc.address, 
-                                          poolAddress, router.address, positionManager.address, 500, 500, 100]);
+    const xU3LPImpl = await deploy('xU3LPStable');
+    const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
+    const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
+    await xU3LP.initialize('xU3LP', lowTick, highTick, dai.address, usdc.address, 
+        poolAddress, router.address, positionManager.address, 500, 500, 100);
     
 
     // approve xU3LP
@@ -60,7 +61,6 @@ async function testTWAP() {
 
     // transfer some tokens to user1
 
-    let user1 = signers[1];
     await dai.transfer(user1.address, bnDecimal(10000000));
     await usdc.transfer(user1.address, bnDecimal(10000000))
     await dai.connect(user1).approve(xU3LP.address, approveAmount);

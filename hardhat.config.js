@@ -5,7 +5,6 @@ require('hardhat-deploy');
 require('hardhat-deploy-ethers');
 require('solidity-coverage');
 require('hardhat-contract-sizer');
-require('@openzeppelin/hardhat-upgrades');
 require('dotenv').config();
 
 module.exports = {
@@ -16,7 +15,7 @@ module.exports = {
 			// forking: {
 			// 	url: process.env.ALCHEMY_URL
 			// }
-    },
+    }
   },
   solidity: {
     version: '0.7.6',

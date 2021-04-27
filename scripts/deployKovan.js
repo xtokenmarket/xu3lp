@@ -1,5 +1,5 @@
-const { ethers, upgrades } = require('hardhat');
-const { deployArgs, printPositionAndBufferBalance, getPriceInX96Format, 
+const { ethers } = require('hardhat');
+const { deploy, deployArgs, printPositionAndBufferBalance, getPriceInX96Format, 
         getNumberNoDecimals, bnDecimal, getRatio, mineBlocks } = require('./helpers');
 const addresses = require('./uniswapAddresses.json').kovan;
 
@@ -13,7 +13,7 @@ const UniFactory = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Factor
  * Need to connect to alchemy Kovan node and enable forking in hardhat config before running
  */
 async function deployXU3LP() {
-    const signers = await ethers.getSigners();
+    const [admin, user1, proxyAdmin] = await ethers.getSigners();
     const dai = await deployArgs('DAI', 'DAI', 'DAI');
     const usdc = await deployArgs('USDC', 'USDC', 'USDC');
     
@@ -32,9 +32,11 @@ async function deployXU3LP() {
     await positionManager.createAndInitializePoolIfNecessary(dai.address, usdc.address, 500, price);
     const poolAddress = await uniFactory.getPool(dai.address, usdc.address, 500);
     
-    const XU3LP = await ethers.getContractFactory("xU3LPStable");
-    const xU3LP = await upgrades.deployProxy(XU3LP, ["xU3LP", lowTick, highTick, dai.address, usdc.address, 
-                                          poolAddress, router.address, positionManager.address, 500, 500, 100]);
+    const xU3LPImpl = await deploy('xU3LPStable');
+    const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
+    const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
+    await xU3LP.initialize('xU3LP', lowTick, highTick, usdc.address, dai.address, 
+        poolAddress, router.address, positionManager.address, 500, 500, 100);
     
     // approve xU3LP
     let approveAmount = bnDecimal(100000000000000);
@@ -109,7 +111,6 @@ async function deployXU3LP() {
     console.log('fees dai:', getNumberNoDecimals(feesDAI), 'usdc:', getNumberNoDecimals(feesUSDC));
     
     console.log('setting manager 1 to user1');
-    let user1 = signers[1];
     await xU3LP.setManager(user1.address);
     await xU3LP.connect(user1).withdrawFees();
     console.log('success withdrawing fees from manager 1');

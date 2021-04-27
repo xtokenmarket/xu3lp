@@ -1,5 +1,5 @@
-const { ethers, upgrades } = require('hardhat');
-const { deployArgs, getPriceInX96Format, bnDecimal, deployWithAbi } = require('../scripts/helpers');
+const { ethers } = require('hardhat');
+const { deploy, deployArgs, getPriceInX96Format, bnDecimal, deployWithAbi } = require('../scripts/helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =
@@ -12,6 +12,7 @@ const UniFactory = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Factor
 const deploymentFixture = deployments.createFixture(async () => {
     const signers = await ethers.getSigners();
     const admin = signers[0];
+    const proxyAdmin = signers[4];
 
     const dai = await deployArgs('DAI', 'DAI', 'DAI');
     const usdc = await deployArgs('USDC', 'USDC', 'USDC');
@@ -32,9 +33,11 @@ const deploymentFixture = deployments.createFixture(async () => {
     await positionManager.createAndInitializePoolIfNecessary(dai.address, usdc.address, 500, price);
     const poolAddress = await uniFactory.getPool(dai.address, usdc.address, 500);
     
-    const XU3LP = await ethers.getContractFactory("xU3LPStable");
-    const xU3LP = await upgrades.deployProxy(XU3LP, ["xU3LP", lowTick, highTick, dai.address, usdc.address, 
-                                          poolAddress, router.address, positionManager.address, 500, 500, 100]);
+    const xU3LPImpl = await deploy('xU3LPStable');
+    const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
+    const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
+    await xU3LP.initialize("xU3LP", lowTick, highTick, dai.address, usdc.address, 
+        poolAddress, router.address, positionManager.address, 500, 500, 100);
     
 
     // approve xU3LP

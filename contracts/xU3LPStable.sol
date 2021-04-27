@@ -767,7 +767,7 @@ contract xU3LPStable is
     }
 
     /**
-     * Swap tokens in xU3LP so as to keep a ratio which is required for 
+     * Swap tokens in xU3LP so as to keep a ratio which is required for
      * depositing/withdrawing liquidity from the pool
      */
     function restoreTokenRatios(
