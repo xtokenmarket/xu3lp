@@ -45,23 +45,27 @@ library Utils {
         uint256 amount0ToMint,
         uint256 amount1ToMint,
         uint256 amount0Minted,
-        uint256 amount1Minted
+        uint256 amount1Minted,
+        int128 liquidityRatio
     ) internal pure returns (uint256 swapAmount) {
         // formula: swapAmount =
         // (amount0ToMint * amount1Minted -
         //  amount1ToMint * amount0Minted) /
-        // (amount0Minted + amount1Minted)
+        // ((amount0Minted + amount1Minted) +
+        //  liquidityRatio * (amount0ToMint + amount1ToMint))
         uint256 mul1 = amount0ToMint.mul(amount1Minted);
         uint256 mul2 = amount1ToMint.mul(amount0Minted);
 
-        uint256 sub1 = subAbs(mul1, mul2);
+        uint256 sub = subAbs(mul1, mul2);
         uint256 add1 = amount0Minted.add(amount1Minted);
+        uint256 add2 = ABDKMath64x64.mulu(liquidityRatio, amount0ToMint.add(amount1ToMint));
+        uint256 add = add1.add(add2);
 
         // Some numbers are too big to fit in ABDK's div 128-bit representation
         // So calculate the root of the equation and then raise to the 2nd power
-        uint128 sub1sqrt = ABDKMath64x64.sqrtu(sub1);
-        uint128 add1sqrt = ABDKMath64x64.sqrtu(add1);
-        int128 nRatio = ABDKMath64x64.divu(sub1sqrt, add1sqrt);
+        uint128 subsqrt = ABDKMath64x64.sqrtu(sub);
+        uint128 addsqrt = ABDKMath64x64.sqrtu(add);
+        int128 nRatio = ABDKMath64x64.divu(subsqrt, addsqrt);
         int64 n = ABDKMath64x64.toInt(nRatio);
         swapAmount = uint256(n)**2;
     }

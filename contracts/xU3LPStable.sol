@@ -427,11 +427,16 @@ contract xU3LPStable is
             amount1Minted <
             amount1ToMint.sub(amount1ToMint.div(MINT_BURN_SLIPPAGE))
         ) {
+            // calculate liquidity ratio
+            uint256 mintLiquidity = getLiquidityForAmounts(amount0ToMint, amount1ToMint);
+            uint256 positionLiquidity = getPositionLiquidity();
+            int128 liquidityRatio = int128(ABDKMath64x64.divuu(mintLiquidity, positionLiquidity));
             (amount0, amount1) = restoreTokenRatios(
                 amount0ToMint,
                 amount1ToMint,
                 amount0Minted,
-                amount1Minted
+                amount1Minted,
+                liquidityRatio
             );
         } else {
             (amount0, amount1) = (amount0ToMint, amount1ToMint);
@@ -788,14 +793,16 @@ contract xU3LPStable is
         uint256 amount0ToMint,
         uint256 amount1ToMint,
         uint256 amount0Minted,
-        uint256 amount1Minted
+        uint256 amount1Minted,
+        int128 liquidityRatio
     ) private returns (uint256 amount0, uint256 amount1) {
         uint256 swapAmount =
             Utils.calculateSwapAmount(
                 amount0ToMint,
                 amount1ToMint,
                 amount0Minted,
-                amount1Minted
+                amount1Minted,
+                liquidityRatio
             );
         if (swapAmount == 0) {
             return (amount0ToMint, amount1ToMint);
