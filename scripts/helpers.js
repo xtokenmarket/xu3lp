@@ -81,7 +81,7 @@ async function printPositionAndBufferBalance(xU3LP) {
 }
 
 /**
- * Get the buffer:pool token ratio
+ * Print the buffer:pool token ratio
  * @param xU3LP xU3LP contract
  */
 async function getRatio(xU3LP) {
@@ -92,6 +92,20 @@ async function getRatio(xU3LP) {
                                   getNumberNoDecimals(bufferBalance);
     
     console.log('xU3LP : pool token ratio:', (100 / contractPoolTokenRatio.toFixed(2)).toFixed(2) + '%');
+}
+
+/**
+ * Get the buffer:staked token ratio
+ * @param xU3LP xU3LP contract
+ */
+ async function getBufferPositionRatio(xU3LP) {
+    let bufferBalance = await xU3LP.getBufferBalance();
+    let poolBalance = await xU3LP.getStakedBalance();
+
+    let contractPoolTokenRatio = (getNumberNoDecimals(bufferBalance) + getNumberNoDecimals(poolBalance)) / 
+                                  getNumberNoDecimals(bufferBalance);
+    
+    return (100 / contractPoolTokenRatio).toFixed(1);
 }
 
 /**
@@ -226,5 +240,5 @@ module.exports = {
     deploy, deployArgs, deployWithAbi, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
     getXU3LPBalance, getPositionBalance, getBufferBalance, printPositionAndBufferBalance,
     bn, bnDecimal, getNumberNoDecimals, getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0,
-    increaseTime, mineBlocks
+    increaseTime, mineBlocks, getBufferPositionRatio
 }
