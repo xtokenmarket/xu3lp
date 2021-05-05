@@ -1,4 +1,4 @@
-pragma solidity ^0.7.6;
+pragma solidity 0.7.6;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./ABDKMath64x64.sol";
@@ -10,7 +10,7 @@ library Utils {
     using SafeMath for uint256;
 
     /**
-        Get asset 0 twap price for the period of [now - secondsAgo, now]
+        Get asset 1 twap price for the period of [now - secondsAgo, now]
      */
     function getTWAP(int56[] memory prices, uint32 secondsAgo)
         internal
@@ -25,7 +25,7 @@ library Utils {
         int256 diff = currentPrice - pastPrice;
         uint256 priceDiff = diff < 0 ? uint256(-diff) : uint256(diff);
 
-        int128 power = ABDKMath64x64.divu(10000, 10001);
+        int128 power = ABDKMath64x64.divu(10001, 10000);
         int128 _fraction = ABDKMath64x64.divu(priceDiff, uint256(secondsAgo));
         uint256 fraction = uint256(ABDKMath64x64.toUInt(_fraction));
 
@@ -58,7 +58,11 @@ library Utils {
 
         uint256 sub = subAbs(mul1, mul2);
         uint256 add1 = amount0Minted.add(amount1Minted);
-        uint256 add2 = ABDKMath64x64.mulu(liquidityRatio, amount0ToMint.add(amount1ToMint));
+        uint256 add2 =
+            ABDKMath64x64.mulu(
+                liquidityRatio,
+                amount0ToMint.add(amount1ToMint)
+            );
         uint256 add = add1.add(add2);
 
         // Some numbers are too big to fit in ABDK's div 128-bit representation
@@ -91,8 +95,7 @@ library Utils {
         pure
         returns (uint256)
     {
-        int256 result = int256(amount0) - int256(amount1);
-        return result < 0 ? uint256(-result) : uint256(result);
+        return amount0 >= amount1 ? amount0.sub(amount1) : amount1.sub(amount0);
     }
 
     // Subtract two numbers and return 0 if result is < 0
@@ -101,8 +104,7 @@ library Utils {
         pure
         returns (uint256)
     {
-        int256 result = int256(amount0) - int256(amount1);
-        return result < 0 ? 0 : uint256(result);
+        return amount0 >= amount1 ? amount0.sub(amount1) : 0;
     }
 
     function calculateFee(uint256 _value, uint256 _feeDivisor)

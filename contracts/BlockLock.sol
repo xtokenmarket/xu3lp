@@ -1,4 +1,4 @@
-pragma solidity ^0.7.6;
+pragma solidity 0.7.6;
 
 /**
  Contract which implements locking of functions via a notLocked modifier

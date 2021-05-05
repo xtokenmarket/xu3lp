@@ -114,9 +114,9 @@ async function edgeCases() {
     await printPositionAndBufferBalance(xU3LP);
 
     // burning - triggering swap (not enough DAI balance)
-    burnAmount = bnDecimal(9400000);
+    burnAmount = bnDecimal(9300000);
     await xU3LP.burn(0, burnAmount);
-    console.log('burning 9400000 DAI successful');
+    console.log('burning 9300000 DAI successful');
     await printPositionAndBufferBalance(xU3LP);
 
     await xU3LP.rebalance();
