@@ -114,16 +114,18 @@ async function getRatio(xU3LP) {
  */
 async function getTokenPrices(xU3LP) {
     // Increase time by 1 hour = 3600 seconds to get previous price
-    await network.provider.send("evm_increaseTime", [3600]);
+    await network.provider.send("evm_increaseTime", [300]);
     await network.provider.send("evm_mine");
     // Get asset 0 price
     let asset0Price = await xU3LP.getAsset0Price();
-    let twap0 = getTWAP(asset0Price);
-    console.log('twap token0:', twap0);
+    console.log('asset 0 price:', asset0Price.toString());
+    // let twap0 = getTWAP(asset0Price);
+    // console.log('twap token0:', twap0);
     // Get Asset 1 Price
     let asset1Price = await xU3LP.getAsset1Price();
-    let twap1 = getTWAP(asset1Price);
-    console.log('twap token1:', twap1);
+    console.log('asset 1 price:', asset1Price.toString());
+    // let twap1 = getTWAP(asset1Price);
+    // console.log('twap token1:', twap1);
     return {
         asset0: twap0,
         asset1: twap1
@@ -227,6 +229,12 @@ function bnDecimal(amount) {
     return bn(amount).mul(decimals);
 }
 
+function bnCustomDecimals(amount, _decimals) {
+    let decimal = Math.pow(10, _decimals);
+    let decimals = bn(decimal.toString());
+    return bn(amount).mul(decimals);
+}
+
 /**
  * Returns number representing BigNumber without decimal precision
  */
@@ -236,9 +244,19 @@ function getNumberNoDecimals(amount) {
     return amount.div(decimals).toNumber();
 }
 
+/**
+ * Returns number representing BigNumber without decimal precision (custom)
+ */
+ function getNumberDivDecimals(amount, _decimals) {
+    let decimal = Math.pow(10, _decimals);
+    let decimals = bn(decimal.toString());
+    return amount.div(decimals).toNumber();
+}
+
 module.exports = {
     deploy, deployArgs, deployWithAbi, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
     getXU3LPBalance, getPositionBalance, getBufferBalance, printPositionAndBufferBalance,
-    bn, bnDecimal, getNumberNoDecimals, getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0,
+    bn, bnDecimal, bnCustomDecimals, getNumberNoDecimals, getNumberDivDecimals, 
+    getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0,
     increaseTime, mineBlocks, getBufferPositionRatio
 }

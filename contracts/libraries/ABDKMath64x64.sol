@@ -98,6 +98,19 @@ library ABDKMath64x64 {
     }
 
     /**
+     * Calculate x * y rounding down.  Revert on overflow.
+     *
+     * @param x signed 64.64-bit fixed point number
+     * @param y signed 64.64-bit fixed point number
+     * @return signed 64.64-bit fixed point number
+     */
+    function mul(int128 x, int128 y) internal pure returns (int128) {
+        int256 result = (int256(x) * y) >> 64;
+        require(result >= MIN_64x64 && result <= MAX_64x64);
+        return int128(result);
+    }
+
+    /**
      * Calculate x * y rounding down, where x is signed 64.64 fixed point number
      * and y is unsigned 256-bit integer number.  Revert on overflow.
      *

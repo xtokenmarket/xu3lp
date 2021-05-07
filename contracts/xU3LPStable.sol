@@ -34,11 +34,12 @@ contract xU3LPStable is
     uint256 private constant LIQUIDATION_TIME_PERIOD = 4 weeks;
     uint256 private constant INITIAL_SUPPLY_MULTIPLIER = 1;
     uint256 private constant BUFFER_TARGET = 20; // 5% target
-    uint256 private constant SWAP_TIMEOUT = 100;
     uint256 private constant SWAP_SLIPPAGE = 100; // 1%
     uint256 private constant MINT_BURN_TIMEOUT = 1000;
     uint256 private constant MINT_BURN_SLIPPAGE = 100; // 1%
     uint24 private constant POOL_FEE = 500;
+    // Used to give an identical token representation
+    uint8 private constant TOKEN_DECIMAL_REPRESENTATION = 18;
 
     int24 tickLower;
     int24 tickUpper;
@@ -58,6 +59,11 @@ contract xU3LPStable is
     uint256 public withdrawableToken0Fees;
     uint256 public withdrawableToken1Fees;
     uint256 public tokenId; // token id representing this uniswap position
+    uint256 public token0DecimalMultiplier; // 10 ** (18 - token0 decimals)
+    uint256 public token1DecimalMultiplier; // 10 ** (18 - token1 decimals)
+    uint256 public tokenDiffDecimalMultiplier; // 10 ** (token0 decimals - token1 decimals)
+    uint8 public token0Decimals;
+    uint8 public token1Decimals;
 
     address private manager;
     address private manager2;
@@ -105,6 +111,15 @@ contract xU3LPStable is
             token0 = _token0;
             token1 = _token1;
         }
+        token0Decimals = getTokenDecimals(address(token0));
+        token1Decimals = getTokenDecimals(address(token1));
+        token0DecimalMultiplier =
+            10**(TOKEN_DECIMAL_REPRESENTATION - token0Decimals);
+        token1DecimalMultiplier =
+            10**(TOKEN_DECIMAL_REPRESENTATION - token1Decimals);
+        tokenDiffDecimalMultiplier =
+            10**((Utils.subAbs(token0Decimals, token1Decimals)));
+
         pool = _pool;
         router = _router;
         positionManager = _positionManager;
@@ -127,6 +142,9 @@ contract xU3LPStable is
     /*                                            User-facing                                    */
     /* ========================================================================================= */
 
+    /**
+     *  @dev Mint xU3LP tokens by sending *amount* of *inputAsset* tokens
+     */
     function mintWithToken(uint8 inputAsset, uint256 amount)
         external
         notLocked()
@@ -136,24 +154,29 @@ contract xU3LPStable is
         uint256 fee;
         if (inputAsset == 0) {
             token0.safeTransferFrom(msg.sender, address(this), amount);
-            amount = getAmountInAsset1Terms(amount);
             fee = Utils.calculateFee(amount, feeDivisors.mintFee);
-            _mintInternal(amount.sub(fee));
             _incrementWithdrawableToken0Fees(fee);
+            _mintInternal(
+                getToken0AmountInWei(getAmountInAsset1Terms(amount).sub(fee))
+            );
         } else {
             token1.safeTransferFrom(msg.sender, address(this), amount);
-            amount = getAmountInAsset0Terms(amount);
             fee = Utils.calculateFee(amount, feeDivisors.mintFee);
-            _mintInternal(amount.sub(fee));
             _incrementWithdrawableToken1Fees(fee);
+            _mintInternal(
+                getToken1AmountInWei(getAmountInAsset0Terms(amount).sub(fee))
+            );
         }
     }
 
+    /**
+     *  @dev Burn *amount* of xU3LP tokens to receive proportional
+     *  amount of *outputAsset* tokens
+     */
     function burn(uint8 outputAsset, uint256 amount) external notLocked() {
         require(amount > 0, "Must redeem token");
         uint256 bufferBalance = getBufferBalance();
-        uint256 stakedBalance = getStakedBalance();
-        uint256 totalBalance = bufferBalance.add(stakedBalance);
+        uint256 totalBalance = bufferBalance.add(getStakedBalance());
 
         uint256 proRataBalance;
         if (outputAsset == 0) {
@@ -177,11 +200,12 @@ contract xU3LPStable is
         );
         super._burn(msg.sender, amount);
 
+        // Fee is in wei (18 decimals, so doesn't need to be normalized)
         uint256 fee = Utils.calculateFee(proRataBalance, feeDivisors.burnFee);
         if (outputAsset == 0) {
-            _incrementWithdrawableToken0Fees(fee);
+            withdrawableToken0Fees = withdrawableToken0Fees.add(fee);
         } else {
-            _incrementWithdrawableToken1Fees(fee);
+            withdrawableToken1Fees = withdrawableToken1Fees.add(fee);
         }
         uint256 transferAmount = proRataBalance.sub(fee);
         transferOnBurn(outputAsset, transferAmount);
@@ -259,12 +283,14 @@ contract xU3LPStable is
     }
 
     function getBufferToken0Balance() public view returns (uint256 amount0) {
-        uint256 balance0 = token0.balanceOf(address(this));
+        uint256 balance0 =
+            getToken0AmountInWei(token0.balanceOf(address(this)));
         return Utils.sub0(balance0, withdrawableToken0Fees);
     }
 
     function getBufferToken1Balance() public view returns (uint256 amount1) {
-        uint256 balance1 = token1.balanceOf(address(this));
+        uint256 balance1 =
+            getToken1AmountInWei(token1.balanceOf(address(this)));
         return Utils.sub0(balance1, withdrawableToken1Fees);
     }
 
@@ -274,7 +300,9 @@ contract xU3LPStable is
         view
         returns (uint256 amount0, uint256 amount1)
     {
-        return getAmountsForLiquidity(getPositionLiquidity());
+        (amount0, amount1) = getAmountsForLiquidity(getPositionLiquidity());
+        amount0 = getToken0AmountInWei(amount0);
+        amount1 = getToken1AmountInWei(amount1);
     }
 
     // Get wanted xU3LP contract token balance - 5% of NAV
@@ -333,6 +361,8 @@ contract xU3LPStable is
             Utils.subAbs(bufferToken0Balance, targetToken0Balance);
         uint256 _amount1 =
             Utils.subAbs(bufferToken1Balance, targetToken1Balance);
+        _amount0 = getToken0AmountInNativeDecimals(_amount0);
+        _amount1 = getToken1AmountInNativeDecimals(_amount1);
         (uint256 amount0, uint256 amount1) =
             checkIfAmountsMatchAndSwap(_amount0, _amount1);
 
@@ -374,30 +404,13 @@ contract xU3LPStable is
                 })
             );
 
-        positionManager.collect(
-            INonfungiblePositionManager.CollectParams({
-                tokenId: tokenId,
-                recipient: address(this),
-                amount0Max: uint128(_amount0),
-                amount1Max: uint128(_amount1)
-            })
-        );
+        collectPosition(uint128(_amount0), uint128(_amount1));
     }
 
     // Collect fees
     function _collect() private {
-        uint128 requestAmount0 = type(uint128).max;
-        uint128 requestAmount1 = type(uint128).max;
-
         (uint256 collected0, uint256 collected1) =
-            positionManager.collect(
-                INonfungiblePositionManager.CollectParams({
-                    tokenId: tokenId,
-                    recipient: address(this),
-                    amount0Max: requestAmount0,
-                    amount1Max: requestAmount1
-                })
-            );
+            collectPosition(type(uint128).max, type(uint128).max);
 
         uint256 fee0 = Utils.calculateFee(collected0, feeDivisors.claimFee);
         uint256 fee1 = Utils.calculateFee(collected1, feeDivisors.claimFee);
@@ -423,17 +436,16 @@ contract xU3LPStable is
             amount1ToMint.sub(amount1ToMint.div(MINT_BURN_SLIPPAGE))
         ) {
             // calculate liquidity ratio
-            int128 liquidityRatio;
-            if (tokenId != 0) {
-                uint256 mintLiquidity =
-                    getLiquidityForAmounts(amount0ToMint, amount1ToMint);
-                uint256 positionLiquidity = getPositionLiquidity();
-                liquidityRatio = int128(
-                    ABDKMath64x64.divuu(mintLiquidity, positionLiquidity)
-                );
-            } else {
-                liquidityRatio = ABDKMath64x64.fromInt(0);
-            }
+            uint256 mintLiquidity =
+                getLiquidityForAmounts(amount0ToMint, amount1ToMint);
+            uint256 positionLiquidity =
+                tokenId == 0 ? 0 : getPositionLiquidity();
+            int128 liquidityRatio =
+                positionLiquidity == 0
+                    ? 0
+                    : int128(
+                        ABDKMath64x64.divuu(mintLiquidity, positionLiquidity)
+                    );
             (amount0, amount1) = restoreTokenRatios(
                 amount0ToMint,
                 amount1ToMint,
@@ -451,15 +463,13 @@ contract xU3LPStable is
         external
         onlyOwnerOrManager
     {
-        require(
-            newTickLower != tickLower || newTickUpper != tickUpper,
-            "Position may only be migrated with different ticks"
-        );
+        require(newTickLower != tickLower || newTickUpper != tickUpper);
 
         // withdraw entire liquidity from the position
         (uint256 _amount0, uint256 _amount1) = withdrawAll();
         // burn current position NFT
         positionManager.burn(tokenId);
+        tokenId = 0;
         // set new ticks and prices
         tickLower = newTickLower;
         tickUpper = newTickUpper;
@@ -494,14 +504,7 @@ contract xU3LPStable is
                 deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
             })
         );
-        positionManager.collect(
-            INonfungiblePositionManager.CollectParams({
-                tokenId: tokenId,
-                recipient: address(this),
-                amount0Max: uint128(_amount0),
-                amount1Max: uint128(_amount1)
-            })
-        );
+        collectPosition(uint128(_amount0), uint128(_amount1));
     }
 
     /**
@@ -524,6 +527,7 @@ contract xU3LPStable is
                 amountOut = amountOut.add(balanceFactor);
                 swapToken1ForToken0(amountIn, amountOut);
             }
+            transferAmount = getToken0AmountInNativeDecimals(transferAmount);
             token0.safeTransfer(msg.sender, transferAmount);
         } else {
             if (balance1 < transferAmount) {
@@ -537,6 +541,7 @@ contract xU3LPStable is
                 amountOut = amountOut.add(balanceFactor);
                 swapToken0ForToken1(amountIn, amountOut);
             }
+            transferAmount = getToken1AmountInNativeDecimals(transferAmount);
             token1.safeTransfer(msg.sender, transferAmount);
         }
     }
@@ -549,11 +554,8 @@ contract xU3LPStable is
         external
         onlyOwnerOrManager
     {
-        require(tokenId == 0, "Position already initialized");
-        require(
-            amount0 > 0 || amount1 > 0,
-            "Cannot mint without sending tokens"
-        );
+        require(tokenId == 0);
+        require(amount0 > 0 || amount1 > 0);
         if (amount0 > 0) {
             token0.safeTransferFrom(msg.sender, address(this), amount0);
         }
@@ -561,6 +563,8 @@ contract xU3LPStable is
             token1.safeTransferFrom(msg.sender, address(this), amount1);
         }
         tokenId = createPosition(amount0, amount1);
+        amount0 = getToken0AmountInWei(amount0);
+        amount1 = getToken1AmountInWei(amount1);
         _mintInternal(
             getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1))
         );
@@ -617,11 +621,15 @@ contract xU3LPStable is
     }
 
     function _incrementWithdrawableToken0Fees(uint256 _feeAmount) private {
-        withdrawableToken0Fees = withdrawableToken0Fees.add(_feeAmount);
+        withdrawableToken0Fees = withdrawableToken0Fees.add(
+            getToken0AmountInWei(_feeAmount)
+        );
     }
 
     function _incrementWithdrawableToken1Fees(uint256 _feeAmount) private {
-        withdrawableToken1Fees = withdrawableToken1Fees.add(_feeAmount);
+        withdrawableToken1Fees = withdrawableToken1Fees.add(
+            getToken1AmountInWei(_feeAmount)
+        );
     }
 
     /*
@@ -635,7 +643,7 @@ contract xU3LPStable is
         uint256 mintFeeDivisor,
         uint256 burnFeeDivisor,
         uint256 claimFeeDivisor
-    ) public onlyOwnerOrManager {
+    ) external onlyOwnerOrManager {
         _setFeeDivisors(mintFeeDivisor, burnFeeDivisor, claimFeeDivisor);
     }
 
@@ -676,8 +684,10 @@ contract xU3LPStable is
      * Withdraw function for token0 and token1 fees
      */
     function withdrawFees() external onlyOwnerOrManager {
-        uint256 token0Fees = withdrawableToken0Fees;
-        uint256 token1Fees = withdrawableToken1Fees;
+        uint256 token0Fees =
+            getToken0AmountInNativeDecimals(withdrawableToken0Fees);
+        uint256 token1Fees =
+            getToken1AmountInNativeDecimals(withdrawableToken1Fees);
         if (token0Fees > 0) {
             token0.safeTransfer(msg.sender, token0Fees);
             withdrawableToken0Fees = 0;
@@ -759,13 +769,15 @@ contract xU3LPStable is
     /* ========================================================================================= */
 
     function swapToken0ForToken1(uint256 amountIn, uint256 amountOut) private {
+        amountIn = getToken0AmountInNativeDecimals(amountIn);
+        amountOut = getToken1AmountInNativeDecimals(amountOut);
         router.exactOutputSingle(
             ISwapRouter.ExactOutputSingleParams({
                 tokenIn: address(token0),
                 tokenOut: address(token1),
                 fee: POOL_FEE,
                 recipient: address(this),
-                deadline: block.timestamp.add(SWAP_TIMEOUT),
+                deadline: block.timestamp,
                 amountOut: amountOut,
                 amountInMaximum: amountIn,
                 sqrtPriceLimitX96: priceLower
@@ -774,13 +786,15 @@ contract xU3LPStable is
     }
 
     function swapToken1ForToken0(uint256 amountIn, uint256 amountOut) private {
+        amountIn = getToken1AmountInNativeDecimals(amountIn);
+        amountOut = getToken0AmountInNativeDecimals(amountOut);
         router.exactOutputSingle(
             ISwapRouter.ExactOutputSingleParams({
                 tokenIn: address(token1),
                 tokenOut: address(token0),
                 fee: POOL_FEE,
                 recipient: address(this),
-                deadline: block.timestamp.add(SWAP_TIMEOUT),
+                deadline: block.timestamp,
                 amountOut: amountOut,
                 amountInMaximum: amountIn,
                 sqrtPriceLimitX96: priceUpper
@@ -799,12 +813,13 @@ contract xU3LPStable is
         uint256 amount1Minted,
         int128 liquidityRatio
     ) private returns (uint256 amount0, uint256 amount1) {
+        // after normalization, returned swap amount will be in wei representation
         uint256 swapAmount =
             Utils.calculateSwapAmount(
-                amount0ToMint,
-                amount1ToMint,
-                amount0Minted,
-                amount1Minted,
+                getToken0AmountInWei(amount0ToMint),
+                getToken1AmountInWei(amount1ToMint),
+                getToken0AmountInWei(amount0Minted),
+                getToken1AmountInWei(amount1Minted),
                 liquidityRatio
             );
         if (swapAmount == 0) {
@@ -822,14 +837,18 @@ contract xU3LPStable is
                 // Not enough balance to swap
                 (uint256 unstakeAmount0, uint256 unstakeAmount1) =
                     calculatePoolMintedAmounts(
-                        swapAmountWithSlippage,
-                        swapAmountWithSlippage
+                        getToken0AmountInNativeDecimals(swapAmountWithSlippage),
+                        getToken1AmountInNativeDecimals(swapAmountWithSlippage)
                     );
+                uint256 balanceSwapAmount =
+                    getToken1AmountInWei(unstakeAmount1);
                 do {
                     _unstake(unstakeAmount0, unstakeAmount1);
                     swapToken1ForToken0(
-                        unstakeAmount1.add(unstakeAmount1.div(SWAP_SLIPPAGE)),
-                        unstakeAmount1
+                        balanceSwapAmount.add(
+                            balanceSwapAmount.div(SWAP_SLIPPAGE)
+                        ),
+                        balanceSwapAmount
                     );
                     balance0 = getBufferToken0Balance();
                 } while (balance0 < swapAmountWithSlippage);
@@ -839,21 +858,29 @@ contract xU3LPStable is
             }
             // Swap tokens
             swapToken0ForToken1(swapAmountWithSlippage, swapAmount);
-            amount0 = amount0ToMint.sub(swapAmount);
-            amount1 = amount1ToMint.add(swapAmount);
+            amount0 = amount0ToMint.sub(
+                getToken0AmountInNativeDecimals(swapAmount)
+            );
+            amount1 = amount1ToMint.add(
+                getToken1AmountInNativeDecimals(swapAmount)
+            );
         } else if (mul1 < mul2) {
             if (balance1 < swapAmountWithSlippage) {
                 // Not enough balance to swap
                 (uint256 unstakeAmount0, uint256 unstakeAmount1) =
                     calculatePoolMintedAmounts(
-                        swapAmountWithSlippage,
-                        swapAmountWithSlippage
+                        getToken0AmountInNativeDecimals(swapAmountWithSlippage),
+                        getToken1AmountInNativeDecimals(swapAmountWithSlippage)
                     );
+                uint256 balanceSwapAmount =
+                    getToken0AmountInWei(unstakeAmount0);
                 do {
                     _unstake(unstakeAmount0, unstakeAmount1);
                     swapToken0ForToken1(
-                        unstakeAmount0.add(unstakeAmount0.div(SWAP_SLIPPAGE)),
-                        unstakeAmount0
+                        balanceSwapAmount.add(
+                            balanceSwapAmount.div(SWAP_SLIPPAGE)
+                        ),
+                        balanceSwapAmount
                     );
                     balance1 = getBufferToken1Balance();
                 } while (balance1 < swapAmountWithSlippage);
@@ -863,8 +890,12 @@ contract xU3LPStable is
             }
             // Swap tokens
             swapToken1ForToken0(swapAmountWithSlippage, swapAmount);
-            amount0 = amount0ToMint.add(swapAmount);
-            amount1 = amount1ToMint.sub(swapAmount);
+            amount0 = amount0ToMint.add(
+                getToken0AmountInNativeDecimals(swapAmount)
+            );
+            amount1 = amount1ToMint.sub(
+                getToken1AmountInNativeDecimals(swapAmount)
+            );
         }
     }
 
@@ -898,7 +929,7 @@ contract xU3LPStable is
         uint32 lastObservationSecondsAgo = currTimestamp - observationTime;
         secondsArray[0] = lastObservationSecondsAgo;
         secondsArray[1] = 0;
-        
+
         // If there are no observations return price 1
         if (
             observationTime >= currTimestamp ||
@@ -912,7 +943,33 @@ contract xU3LPStable is
         }
         (int56[] memory prices, ) = pool.observe(secondsArray);
 
-        return Utils.getTWAP(prices, lastObservationSecondsAgo);
+        int128 twap = Utils.getTWAP(prices, lastObservationSecondsAgo);
+        if (token0Decimals == token1Decimals) {
+            return twap;
+        } else {
+            return
+                ABDKMath64x64.mul(
+                    twap,
+                    ABDKMath64x64.divu(1, tokenDiffDecimalMultiplier)
+                );
+        }
+    }
+
+    /**
+     *  Collect token amounts from pool position
+     */
+    function collectPosition(uint128 amount0, uint128 amount1)
+        private
+        returns (uint256 collected0, uint256 collected1)
+    {
+        (collected0, collected1) = positionManager.collect(
+            INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId,
+                recipient: address(this),
+                amount0Max: amount0,
+                amount1Max: amount1
+            })
+        );
     }
 
     /**
@@ -963,5 +1020,80 @@ contract xU3LPStable is
      */
     function getTicks() external view returns (int24 tick0, int24 tick1) {
         return (tickLower, tickUpper);
+    }
+
+    /**
+     * Return decimals of an ERC-20 token
+     */
+    function getTokenDecimals(address token)
+        private
+        view
+        returns (uint8 decimals)
+    {
+        (bool success, bytes memory data) =
+            address(token).staticcall(
+                abi.encodeWithSelector(ERC20Upgradeable.decimals.selector)
+            );
+        if (success) {
+            return abi.decode(data, (uint8));
+        } else {
+            return 0;
+        }
+    }
+
+    /**
+     * Returns token0 amount in TOKEN_DECIMAL_REPRESENTATION
+     */
+    function getToken0AmountInWei(uint256 amount)
+        private
+        view
+        returns (uint256)
+    {
+        if (token0Decimals < TOKEN_DECIMAL_REPRESENTATION) {
+            amount = amount.mul(token0DecimalMultiplier);
+        }
+        return amount;
+    }
+
+    /**
+     * Returns token1 amount in TOKEN_DECIMAL_REPRESENTATION
+     */
+    function getToken1AmountInWei(uint256 amount)
+        private
+        view
+        returns (uint256)
+    {
+        if (token1Decimals < TOKEN_DECIMAL_REPRESENTATION) {
+            amount = amount.mul(token1DecimalMultiplier);
+        }
+        return amount;
+    }
+
+    /**
+     * Returns token0 amount in token0Decimals
+     */
+    function getToken0AmountInNativeDecimals(uint256 amount)
+        private
+        view
+        returns (uint256)
+    {
+        if (token0Decimals < TOKEN_DECIMAL_REPRESENTATION) {
+            amount = amount.div(token0DecimalMultiplier);
+        }
+        return amount;
+    }
+
+    /**
+     * Returns token1 amount in token1Decimals
+     */
+    function getToken1AmountInNativeDecimals(uint256 amount)
+        private
+        view
+        returns (uint256)
+    {
+        if (token1Decimals < TOKEN_DECIMAL_REPRESENTATION) {
+            amount = amount.div(token1DecimalMultiplier);
+        }
+        return amount;
     }
 }
