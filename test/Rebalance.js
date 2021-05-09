@@ -1,42 +1,31 @@
 const assert = require('assert');
 const { expect } = require('chai');
 const { deploymentFixture } = require('./fixture');
-const { getBalance, getBufferBalance, getBlockTimestamp, 
-        bn, bnDecimal, getNumberNoDecimals, mineBlocks } = require('../scripts/helpers');
+const { getBufferBalance, getBlockTimestamp, bnDecimals,
+        bnDecimal, mineBlocks, getBufferPositionRatio } = require('../scripts/helpers');
 
 // Rebalance tests for xU3LP
 describe('Contract: xU3LP', async () => {
-  let dai, usdc, xU3LP, user;
-  let bufferPercentage = 5;
+  let token0Decimals, token1Decimals, xU3LP, user;
 
   beforeEach(async () => {
-      ({ dai, usdc, xU3LP } = await deploymentFixture());
+      ({ token0Decimals, token1Decimals, xU3LP } = await deploymentFixture());
       const signers = await ethers.getSigners();
       user = signers[1];
-      let mintAmount = bnDecimal(100000000);
-      await xU3LP.mintInitial(mintAmount, mintAmount);
+      let mintAmount = bnDecimals(100000000, token0Decimals);
+      let mintAmount2 = bnDecimals(100000000, token1Decimals);
+      await xU3LP.mintInitial(mintAmount, mintAmount2);
   })
 
   describe('Rebalance', async () => {
     it('should rebalance toward pool if bufferBalance > 5 % total balance', async () => {
-        let startBufferBalance = await getBalance(dai, usdc, xU3LP.address);
-        let startPoolBalance = await xU3LP.getStakedTokenBalance();
-
-        assert(startBufferBalance.dai == 0);
-        assert(startBufferBalance.usdc == 0);
-    
+        let ratio = await getBufferPositionRatio(xU3LP);
+        expect(ratio).not.to.be.equal('5.0');
         // rebalance -> leaving 95% in the pool and 5% in xu3lp
         await xU3LP.rebalance();
     
-        let actualBalance = await getBalance(dai, usdc, xU3LP.address);
-
-        let daiExpectedBufferBalance = getNumberNoDecimals(startPoolBalance.amount0.
-                                                            mul(bn(bufferPercentage)).div(100));
-        let usdcExpectedBufferBalance = getNumberNoDecimals(startPoolBalance.amount1.
-                                                            mul(bn(bufferPercentage)).div(100));
-
-        assert(actualBalance.dai == daiExpectedBufferBalance);
-        assert(actualBalance.usdc == usdcExpectedBufferBalance);
+        ratio = await getBufferPositionRatio(xU3LP);
+        expect(ratio).to.be.equal('5.0');
     })
 
     it('should rebalance toward xu3lp if bufferBalance < 5 % total balance', async () => {
@@ -48,38 +37,37 @@ describe('Contract: xU3LP', async () => {
         await mineBlocks(5);
         await xU3LP.burn(1, bnDecimal(100000));
 
+        let ratio = await getBufferPositionRatio(xU3LP);
+        expect(ratio).not.to.be.equal('5.0');
         // rebalance -> less than 5% left in xu3lp, so some needs to be withdrawn from the pool
         await xU3LP.rebalance();
 
-        let targetBalance = await xU3LP.getTargetBufferTokenBalance();
-        let actualBalance = await xU3LP.getBufferTokenBalance();
-        
-        let targetBalances = {};
-        targetBalances.dai = getNumberNoDecimals(targetBalance.amount0);
-        targetBalances.usdc = getNumberNoDecimals(targetBalance.amount1);
-
-        let actualBalances = {};
-        actualBalances.dai = getNumberNoDecimals(actualBalance.amount0);
-        actualBalances.usdc = getNumberNoDecimals(actualBalance.amount1);
-
-        assert(targetBalances.dai == actualBalances.dai);
-        assert(targetBalances.usdc == actualBalances.usdc);
+        ratio = await getBufferPositionRatio(xU3LP);
+        expect(ratio).to.be.equal('5.0');
     }),
 
     it('should be able to rebalance even if we have 0 balance in asset 0', async () => {
-        let amount = bnDecimal(100000);
+        let amount = bnDecimals(100000, token1Decimals);
         await xU3LP.mintWithToken(1, amount);
         let balances = await getBufferBalance(xU3LP);
-        expect(balances.dai).to.be.eq(0);
+        // swap dai for usdc if we have > 0 balance
+        if(balances.dai > 0) {
+            let swapAmount = (balances.dai - balances.dai / 100).toFixed(0);
+            await xU3LP.adminSwap(bnDecimal(swapAmount), true)
+        }
         // we attempt to swap token 0 for token 1 in the rebalance process
         await xU3LP.rebalance();
     }),
   
     it('should be able to rebalance even if we have 0 balance in asset 1', async () => {
-        let amount = bnDecimal(100000);
+        let amount = bnDecimals(100000, token0Decimals);
         await xU3LP.mintWithToken(0, amount);
         let balances = await getBufferBalance(xU3LP);
-        expect(balances.usdc).to.be.eq(0);
+        // swap usdc for dai if we have > 0 balance
+        if(balances.usdc > 0) {
+            let swapAmount = (balances.usdc - balances.usdc / 100).toFixed(0);
+            await xU3LP.adminSwap(bnDecimal(swapAmount), false)
+        }
         // we attempt to swap token 1 for token 0 in the rebalance process
         await xU3LP.rebalance();
     }),
@@ -87,9 +75,9 @@ describe('Contract: xU3LP', async () => {
     it('should collect fees after rebalancing to pool (token 0)', async () => {
         await xU3LP.rebalance();
 
-        await xU3LP.mintWithToken(0, bnDecimal(100000));
+        await xU3LP.mintWithToken(0, bnDecimals(100000, token0Decimals));
         await mineBlocks(5);
-        await xU3LP.mintWithToken(1, bnDecimal(100000));
+        await xU3LP.mintWithToken(1, bnDecimals(100000, token1Decimals));
         let feesBefore = await xU3LP.withdrawableToken0Fees();
 
         // swap tokens so as to generate fees
@@ -105,9 +93,9 @@ describe('Contract: xU3LP', async () => {
     it('should collect fees after rebalancing to pool (token 1)', async () => {
         await xU3LP.rebalance();
 
-        await xU3LP.mintWithToken(0, bnDecimal(100000));
+        await xU3LP.mintWithToken(0, bnDecimals(100000, token0Decimals));
         await mineBlocks(5);
-        await xU3LP.mintWithToken(1, bnDecimal(100000));
+        await xU3LP.mintWithToken(1, bnDecimals(100000, token1Decimals));
         let feesBefore = await xU3LP.withdrawableToken1Fees();
 
         // swap tokens so as to generate fees

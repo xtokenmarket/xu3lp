@@ -32,7 +32,10 @@ async function deployArgs(contractName, ...args) {
 async function getBalance(token0, token1, address) {
     let daiBalance = await token0.balanceOf(address);
     let usdcBalance = await token1.balanceOf(address);
-    return {dai: getNumberNoDecimals(daiBalance), usdc: getNumberNoDecimals(usdcBalance)};
+    return {
+        dai: getNumberDivDecimals(daiBalance, await token0.decimals()), 
+        usdc: getNumberDivDecimals(usdcBalance, await token1.decimals())
+    };
   }
 
 /**
@@ -87,6 +90,8 @@ async function printPositionAndBufferBalance(xU3LP) {
 async function getRatio(xU3LP) {
     let bufferBalance = await xU3LP.getBufferBalance();
     let poolBalance = await xU3LP.getStakedBalance();
+    console.log('buffer balance:', getNumberNoDecimals(bufferBalance));
+    console.log('position balance:', getNumberNoDecimals(poolBalance));
 
     let contractPoolTokenRatio = (getNumberNoDecimals(bufferBalance) + getNumberNoDecimals(poolBalance)) / 
                                   getNumberNoDecimals(bufferBalance);
@@ -119,13 +124,13 @@ async function getTokenPrices(xU3LP) {
     // Get asset 0 price
     let asset0Price = await xU3LP.getAsset0Price();
     console.log('asset 0 price:', asset0Price.toString());
-    // let twap0 = getTWAP(asset0Price);
-    // console.log('twap token0:', twap0);
+    let twap0 = getTWAP(asset0Price);
+    console.log('twap token0:', twap0);
     // Get Asset 1 Price
     let asset1Price = await xU3LP.getAsset1Price();
     console.log('asset 1 price:', asset1Price.toString());
-    // let twap1 = getTWAP(asset1Price);
-    // console.log('twap token1:', twap1);
+    let twap1 = getTWAP(asset1Price);
+    console.log('twap token1:', twap1);
     return {
         asset0: twap0,
         asset1: twap1
@@ -162,6 +167,80 @@ async function swapToken1ForToken0(router, token0, token1, swapperAddress, amoun
         deadline: timestamp,
         amountIn: amount,
         amountOutMinimum: amount.sub(amount.div(100)),
+        sqrtPriceLimitX96: highPrice
+    });
+}
+
+/**
+ * Swap token 0 for token 1 using Uniswap Router, considering token decimals when swapping
+ */
+async function swapToken0ForToken1Decimals(router, token0, token1, swapperAddress, amount) {
+    let lowPrice = '79125342561396703567017'
+    const pendingBlock = await network.provider.send("eth_getBlockByNumber", ["pending", false])
+    const timestamp = pendingBlock.timestamp + 10000;
+    // tokens should be in precise decimal representation before swapping
+    let amountIn = amount;
+    let amountOut = amount.sub(amount.div(100));
+    let token0Decimals = await token0.decimals();
+    let token1Decimals = await token1.decimals();
+    if(token0Decimals > token1Decimals) {
+        let divisor = bn(10).pow(bn(token0Decimals - token1Decimals));
+        amountOut = amountOut.div(divisor);
+    } else if(token0Decimals < token1Decimals) {
+        let divisor = bn(10).pow(bn(token1Decimals - token0Decimals));
+        amountIn = amountIn.div(divisor);
+    } else if(token0Decimals < 18) {
+        let divisor = bn(10).pow(bn(18 - token0Decimals));
+        amountIn = amountIn.div(divisor);
+        amountOut = amountOut.div(divisor);
+    }
+
+    await router.exactInputSingle({
+        tokenIn: token0.address,
+        tokenOut: token1.address,
+        fee: 500,
+        recipient: swapperAddress,
+        deadline: timestamp,
+        amountIn: amountIn,
+        amountOutMinimum: amountOut,
+        sqrtPriceLimitX96: lowPrice
+      });
+}
+
+/**
+ * Swap token 1 for token 0 using Uniswap Router, considering token decimals when swapping
+ */
+async function swapToken1ForToken0Decimals(router, token0, token1, swapperAddress, amount) {
+    //let highPrice = '79363063105786882359298' - 6:18 decimal high price
+    const highPrice = getPriceInX96Format(1.003);
+    const pendingBlock = await network.provider.send("eth_getBlockByNumber", ["pending", false])
+    const timestamp = pendingBlock.timestamp + 10000;
+
+    // tokens should be in precise decimal representation before swapping
+    let amountIn = amount;
+    let amountOut = amount.sub(amount.div(100));
+    let token0Decimals = await token0.decimals();
+    let token1Decimals = await token1.decimals();
+    if(token0Decimals > token1Decimals) {
+        let divisor = bn(10).pow(bn(token0Decimals - token1Decimals));
+        amountIn = amountIn.div(divisor);
+    } else if(token0Decimals < token1Decimals) {
+        let divisor = bn(10).pow(bn(token1Decimals - token0Decimals));
+        amountOut = amountOut.div(divisor);
+    } else if(token0Decimals < 18) {
+        let divisor = bn(10).pow(bn(18 - token0Decimals));
+        amountIn = amountIn.div(divisor);
+        amountOut = amountOut.div(divisor);
+    }
+
+    await router.exactInputSingle({
+        tokenIn: token1.address,
+        tokenOut: token0.address,
+        fee: 500,
+        recipient: swapperAddress,
+        deadline: timestamp,
+        amountIn: amountIn,
+        amountOutMinimum: amountOut,
         sqrtPriceLimitX96: highPrice
     });
 }
@@ -229,7 +308,10 @@ function bnDecimal(amount) {
     return bn(amount).mul(decimals);
 }
 
-function bnCustomDecimals(amount, _decimals) {
+/**
+ * Returns bignumber scaled to custom amount of decimals
+ */
+ function bnDecimals(amount, _decimals) {
     let decimal = Math.pow(10, _decimals);
     let decimals = bn(decimal.toString());
     return bn(amount).mul(decimals);
@@ -256,7 +338,8 @@ function getNumberNoDecimals(amount) {
 module.exports = {
     deploy, deployArgs, deployWithAbi, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
     getXU3LPBalance, getPositionBalance, getBufferBalance, printPositionAndBufferBalance,
-    bn, bnDecimal, bnCustomDecimals, getNumberNoDecimals, getNumberDivDecimals, 
-    getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0,
+    bn, bnDecimal, bnDecimals, getNumberNoDecimals, getNumberDivDecimals, 
+    getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0, 
+    swapToken0ForToken1Decimals, swapToken1ForToken0Decimals,
     increaseTime, mineBlocks, getBufferPositionRatio
 }

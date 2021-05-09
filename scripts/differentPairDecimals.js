@@ -1,6 +1,6 @@
 const { ethers } = require('hardhat');
 const { deploy, deployArgs, printPositionAndBufferBalance, getPriceInX96Format, deployWithAbi,
-        getNumberNoDecimals, bnDecimal, getRatio, mineBlocks, bnCustomDecimals, getTokenPrices } = require('./helpers');
+        getNumberNoDecimals, bnDecimal, getRatio, mineBlocks, bnDecimals, getTokenPrices } = require('./helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionManager = 
@@ -59,14 +59,14 @@ async function deployXU3LP() {
     // mint initial - required to initialize the liquidity position
     // and create the NFT representing it
     let mintAmount = bnDecimal(100000000);
-    let mintAmount2 = bnCustomDecimals(100000000, 6);
+    let mintAmount2 = bnDecimals(100000000, 6);
     await xU3LP.mintInitial(mintAmount, mintAmount2);
     console.log('first mint success');
     await printPositionAndBufferBalance(xU3LP);
 
     // minting
     mintAmount = bnDecimal(1000000);
-    mintAmount2 = bnCustomDecimals(1000000, 6);
+    mintAmount2 = bnDecimals(1000000, 6);
 
     await xU3LP.mintWithToken(0, mintAmount);
     await mineBlocks(5);
@@ -87,7 +87,7 @@ async function deployXU3LP() {
     console.log('burning 10 000 token0 successful');
     await printPositionAndBufferBalance(xU3LP);
 
-    burnAmount = bnCustomDecimals(30000, 6);
+    burnAmount = bnDecimals(30000, 6);
     await xU3LP.burn(1, burnAmount);
     await mineBlocks(5);
     console.log('burning 30 000 token1 successful');
@@ -111,7 +111,7 @@ async function deployXU3LP() {
     await printPositionAndBufferBalance(xU3LP);
 
     // burning - triggering swap (not enough token1 balance)
-    burnAmount = bnCustomDecimals(10000000, 6);
+    burnAmount = bnDecimals(10000000, 6);
     await xU3LP.burn(1, burnAmount);
     await mineBlocks(5);
     console.log('burning 10 000 000 token1 successful');

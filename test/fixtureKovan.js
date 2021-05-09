@@ -22,8 +22,8 @@ const deploymentFixture = deployments.createFixture(async () => {
                                     addresses.swapRouter);
 
     // 0.997 - 1.003 price
-    const lowTick = -60;
-    const highTick = 60;
+    const lowTick = -30;
+    const highTick = 30;
     // Price = 1
     const price = getPriceInX96Format(1);
 
