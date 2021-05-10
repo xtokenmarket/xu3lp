@@ -35,7 +35,6 @@ contract xU3LPStable is
     uint256 private constant INITIAL_SUPPLY_MULTIPLIER = 1;
     uint256 private constant BUFFER_TARGET = 20; // 5% target
     uint256 private constant SWAP_SLIPPAGE = 100; // 1%
-    uint256 private constant MINT_BURN_TIMEOUT = 1000;
     uint256 private constant MINT_BURN_SLIPPAGE = 100; // 1%
     uint24 private constant POOL_FEE = 500;
     // Used to give an identical token representation
@@ -47,6 +46,10 @@ contract xU3LPStable is
     // Prices calculated using above ticks from TickMath.getSqrtRatioAtTick()
     uint160 priceLower;
     uint160 priceUpper;
+
+    int128 lastTwap; // Last stored oracle twap
+    // Max current twap vs last twap deviation percentage divisor (100 = 1%)
+    uint256 maxTwapDeviationDivisor;
 
     IERC20 token0;
     IERC20 token1;
@@ -91,9 +94,10 @@ contract xU3LPStable is
         IUniswapV3Pool _pool,
         ISwapRouter _router,
         INonfungiblePositionManager _positionManager,
-        uint256 _mintFeeDivisor,
-        uint256 _burnFeeDivisor,
-        uint256 _claimFeeDivisor
+        FeeDivisors memory _feeDivisors,
+        uint256 _maxTwapDeviationDivisor,
+        uint8 _token0Decimals,
+        uint8 _token1Decimals
     ) external initializer {
         __Context_init_unchained();
         __Ownable_init_unchained();
@@ -111,14 +115,16 @@ contract xU3LPStable is
             token0 = _token0;
             token1 = _token1;
         }
-        token0Decimals = getTokenDecimals(address(token0));
-        token1Decimals = getTokenDecimals(address(token1));
+        token0Decimals = _token0Decimals;
+        token1Decimals = _token1Decimals;
         token0DecimalMultiplier =
             10**(TOKEN_DECIMAL_REPRESENTATION - token0Decimals);
         token1DecimalMultiplier =
             10**(TOKEN_DECIMAL_REPRESENTATION - token1Decimals);
         tokenDiffDecimalMultiplier =
             10**((Utils.subAbs(token0Decimals, token1Decimals)));
+
+        maxTwapDeviationDivisor = _maxTwapDeviationDivisor;
 
         pool = _pool;
         router = _router;
@@ -135,7 +141,8 @@ contract xU3LPStable is
             type(uint256).max
         );
 
-        _setFeeDivisors(_mintFeeDivisor, _burnFeeDivisor, _claimFeeDivisor);
+        lastTwap = getAsset1Price();
+        _setFeeDivisors(_feeDivisors);
     }
 
     /* ========================================================================================= */
@@ -151,6 +158,7 @@ contract xU3LPStable is
         whenNotPaused()
     {
         require(amount > 0, "Must send token");
+        checkTwap();
         uint256 fee;
         if (inputAsset == 0) {
             token0.safeTransferFrom(msg.sender, address(this), amount);
@@ -175,6 +183,7 @@ contract xU3LPStable is
      */
     function burn(uint8 outputAsset, uint256 amount) external notLocked() {
         require(amount > 0, "Must redeem token");
+        checkTwap();
         uint256 bufferBalance = getBufferBalance();
         uint256 totalBalance = bufferBalance.add(getStakedBalance());
 
@@ -350,6 +359,7 @@ contract xU3LPStable is
     }
 
     function _provideOrRemoveLiquidity() private {
+        checkTwap();
         (uint256 bufferToken0Balance, uint256 bufferToken1Balance) =
             getBufferTokenBalance();
         (uint256 targetToken0Balance, uint256 targetToken1Balance) =
@@ -385,7 +395,7 @@ contract xU3LPStable is
                 amount1Desired: amount1,
                 amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
                 amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+                deadline: block.timestamp
             })
         );
     }
@@ -400,7 +410,7 @@ contract xU3LPStable is
                     liquidity: liquidityAmount,
                     amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
                     amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                    deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+                    deadline: block.timestamp
                 })
             );
 
@@ -501,7 +511,7 @@ contract xU3LPStable is
                 liquidity: liquidity,
                 amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
                 amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+                deadline: block.timestamp
             })
         );
         collectPosition(uint128(_amount0), uint128(_amount1));
@@ -556,6 +566,7 @@ contract xU3LPStable is
     {
         require(tokenId == 0);
         require(amount0 > 0 || amount1 > 0);
+        checkTwap();
         if (amount0 > 0) {
             token0.safeTransferFrom(msg.sender, address(this), amount0);
         }
@@ -590,7 +601,7 @@ contract xU3LPStable is
                 amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
                 amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
                 recipient: address(this),
-                deadline: block.timestamp.add(MINT_BURN_TIMEOUT)
+                deadline: block.timestamp
             })
         );
     }
@@ -639,27 +650,26 @@ contract xU3LPStable is
      * @dev Burn fee 0 or <= 1%
      * @dev Claim fee 0 <= 4%
      */
-    function setFeeDivisors(
-        uint256 mintFeeDivisor,
-        uint256 burnFeeDivisor,
-        uint256 claimFeeDivisor
-    ) external onlyOwnerOrManager {
-        _setFeeDivisors(mintFeeDivisor, burnFeeDivisor, claimFeeDivisor);
+    function setFeeDivisors(FeeDivisors memory _feeDivisors)
+        external
+        onlyOwnerOrManager
+    {
+        _setFeeDivisors(_feeDivisors);
     }
 
-    function _setFeeDivisors(
-        uint256 _mintFeeDivisor,
-        uint256 _burnFeeDivisor,
-        uint256 _claimFeeDivisor
-    ) private {
-        require(_mintFeeDivisor == 0 || _mintFeeDivisor >= 100);
-        require(_burnFeeDivisor == 0 || _burnFeeDivisor >= 100);
-        require(_claimFeeDivisor == 0 || _claimFeeDivisor >= 25);
-        feeDivisors.mintFee = _mintFeeDivisor;
-        feeDivisors.burnFee = _burnFeeDivisor;
-        feeDivisors.claimFee = _claimFeeDivisor;
+    function _setFeeDivisors(FeeDivisors memory _feeDivisors) private {
+        require(_feeDivisors.mintFee == 0 || _feeDivisors.mintFee >= 100);
+        require(_feeDivisors.burnFee == 0 || _feeDivisors.burnFee >= 100);
+        require(_feeDivisors.claimFee == 0 || _feeDivisors.claimFee >= 25);
+        feeDivisors.mintFee = _feeDivisors.mintFee;
+        feeDivisors.burnFee = _feeDivisors.burnFee;
+        feeDivisors.claimFee = _feeDivisors.claimFee;
 
-        emit FeeDivisorsSet(_mintFeeDivisor, _burnFeeDivisor, _claimFeeDivisor);
+        emit FeeDivisorsSet(
+            feeDivisors.mintFee,
+            feeDivisors.burnFee,
+            feeDivisors.claimFee
+        );
     }
 
     /*
@@ -670,10 +680,7 @@ contract xU3LPStable is
         external
         onlyOwnerOrManager
     {
-        require(
-            token != address(token0) && token != address(token1),
-            "Only non-LP tokens can be withdrawn"
-        );
+        require(token != address(token0) && token != address(token1));
         uint256 tokenBal = IERC20(address(token)).balanceOf(address(this));
         if (tokenBal > 0) {
             IERC20(address(token)).safeTransfer(receiver, tokenBal);
@@ -758,8 +765,7 @@ contract xU3LPStable is
         require(
             msg.sender == owner() ||
                 msg.sender == manager ||
-                msg.sender == manager2,
-            "Non-admin caller"
+                msg.sender == manager2
         );
         _;
     }
@@ -944,15 +950,52 @@ contract xU3LPStable is
         (int56[] memory prices, ) = pool.observe(secondsArray);
 
         int128 twap = Utils.getTWAP(prices, lastObservationSecondsAgo);
-        if (token0Decimals == token1Decimals) {
-            return twap;
-        } else {
-            return
-                ABDKMath64x64.mul(
-                    twap,
-                    ABDKMath64x64.divu(1, tokenDiffDecimalMultiplier)
-                );
+        if (token0Decimals > token1Decimals) {
+            twap = ABDKMath64x64.mul(
+                twap,
+                ABDKMath64x64.divu(1, tokenDiffDecimalMultiplier)
+            );
+        } else if (token1Decimals > token0Decimals) {
+            int128 multiplierFixed =
+                ABDKMath64x64.fromUInt(tokenDiffDecimalMultiplier);
+            twap = ABDKMath64x64.mul(twap, multiplierFixed);
         }
+        return twap;
+    }
+
+    /**
+     * Checks if twap deviates too much from the previous twap
+     */
+    function checkTwap() private {
+        int128 twap = getAsset1Price();
+        int128 _lastTwap = lastTwap;
+        int128 deviation =
+            _lastTwap > twap ? _lastTwap - twap : twap - _lastTwap;
+        int128 maxDeviation =
+            ABDKMath64x64.mul(
+                twap,
+                ABDKMath64x64.divu(1, maxTwapDeviationDivisor)
+            );
+        require(deviation <= maxDeviation, "Wrong twap");
+        lastTwap = twap;
+    }
+
+    /**
+     *  Reset last twap if oracle price is consistently above the max deviation
+     *  Requires twap to be above max deviation to execute
+     */
+    function resetTwap() external onlyOwnerOrManager {
+        lastTwap = getAsset1Price();
+    }
+
+    /**
+     *  Set the max twap deviation divisor
+     */
+    function setMaxTwapDeviationDivisor(uint256 newDeviationDivisor)
+        external
+        onlyOwnerOrManager
+    {
+        maxTwapDeviationDivisor = newDeviationDivisor;
     }
 
     /**
@@ -978,7 +1021,7 @@ contract xU3LPStable is
      * amount0Minted, amount1Minted - actual amounts which can be deposited
      */
     function calculatePoolMintedAmounts(uint256 amount0, uint256 amount1)
-        private
+        public
         view
         returns (uint256 amount0Minted, uint256 amount1Minted)
     {
@@ -1020,25 +1063,6 @@ contract xU3LPStable is
      */
     function getTicks() external view returns (int24 tick0, int24 tick1) {
         return (tickLower, tickUpper);
-    }
-
-    /**
-     * Return decimals of an ERC-20 token
-     */
-    function getTokenDecimals(address token)
-        private
-        view
-        returns (uint8 decimals)
-    {
-        (bool success, bytes memory data) =
-            address(token).staticcall(
-                abi.encodeWithSelector(ERC20Upgradeable.decimals.selector)
-            );
-        if (success) {
-            return abi.decode(data, (uint8));
-        } else {
-            return 0;
-        }
     }
 
     /**
