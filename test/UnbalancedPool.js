@@ -269,7 +269,7 @@ describe('Contract: xU3LP', async () => {
 
     it('should be able to rebalance in a pool with 1:40 token ratio', async () => {
       // start: 95M token0 and token1
-      let swapAmount = bnDecimal(90000000);
+      let swapAmount = bnDecimal(89900000);
       await swapToken1ForToken0Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
       // after swap: 5M token0 and 185M token1 - ~1:40 ratio

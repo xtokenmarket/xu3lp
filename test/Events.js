@@ -18,7 +18,7 @@ describe('Contract: xU3LP', async () => {
     })
 
     it('should emit event on setting fee divisors', async () => {
-      await expect(xU3LP.setFeeDivisors(100, 100, 100))
+      await expect(xU3LP.setFeeDivisors({mintFee: 100, burnFee: 100, claimFee: 100}))
             .to.emit(xU3LP, 'FeeDivisorsSet')
     }),
 

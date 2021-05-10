@@ -79,7 +79,7 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to set fee divisors', async () => {
-        await xU3LP.setFeeDivisors(100, 200, 500);
+        await xU3LP.setFeeDivisors({mintFee: 100, burnFee: 200, claimFee: 500});
 
         let feeDivisors = await xU3LP.feeDivisors();
 
@@ -109,9 +109,9 @@ describe('Contract: xU3LP', async () => {
 
     it('shouldn\'t be able to transfer out LP tokens from the contract', async () => {
       await expect(xU3LP.withdrawToken(token0.address, admin.address)).
-        to.be.revertedWith('Only non-LP tokens can be withdrawn');
+        to.be.reverted;
       await expect(xU3LP.withdrawToken(token1.address, admin.address)).
-        to.be.revertedWith('Only non-LP tokens can be withdrawn');
+        to.be.reverted;
     }),
 
     it('should be able to stake without rebalancing', async () => {

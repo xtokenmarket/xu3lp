@@ -18,8 +18,10 @@ async function testTWAP() {
     const [admin, user1, proxyAdmin] = await ethers.getSigners();
 
     const dai = await deployArgs('DAI', 'DAI', 'DAI');
-    const usdc = await deployArgs('USDC', 'USDC', 'USDC');
+    const usdc = await deployArgs('sUSD', 'sUSD', 'sUSD');
     const weth = await deployArgs('WETH', 'WETH', 'WETH');
+    let token0Decimals = await dai.decimals();
+    let token1Decimals = await usdc.decimals();
 
     const uniFactory = await deployWithAbi(UniFactory, admin);
     const tokenDescriptor = await deployWithAbi(NFTPositionDescriptor, admin, weth.address);
@@ -42,7 +44,8 @@ async function testTWAP() {
     const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
     const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
     await xU3LP.initialize('xU3LP', lowTick, highTick, dai.address, usdc.address, 
-        poolAddress, router.address, positionManager.address, 500, 500, 100);
+        poolAddress, router.address, positionManager.address,
+        {mintFee: 1250, burnFee: 1250, claimFee: 50}, 100, token0Decimals, token1Decimals);
     
 
     // approve xU3LP

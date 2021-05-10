@@ -17,14 +17,16 @@ describe('Contract: xU3LP', async () => {
   describe('Mint and burn', async () => {
     it('should mint xu3lp tokens to user', async () => {
         let amount = bnDecimals(1000000, token0Decimals);
-        let amountInXU3LPDecimals = bnDecimal(1000000);
         await xU3LP.connect(user).mintWithToken(0, amount);
         let balance = await getXU3LPBalance(xU3LP, user.address);
         let feeDivisors = await xU3LP.feeDivisors();
         let mintFee = feeDivisors.mintFee;
 
-        let amountInAsset1Terms = await xU3LP.getAmountInAsset1Terms(amountInXU3LPDecimals);
-        let amountWithoutFees = (amountInAsset1Terms.sub((amountInXU3LPDecimals.div(mintFee))));
+        let amountInAsset1Terms = await xU3LP.getAmountInAsset1Terms(amount);
+        let amountWithoutFees = (amountInAsset1Terms.sub(amount.div(mintFee)));
+        if(token0Decimals < 18) {
+          amountWithoutFees = amountWithoutFees.mul(bn(10).pow(18 - token0Decimals));
+        }
 
         const nav = await xU3LP.getNav();
         const totalSupply = await xU3LP.totalSupply();

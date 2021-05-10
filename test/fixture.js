@@ -34,16 +34,16 @@ const deploymentFixture = deployments.createFixture(async () => {
 
     // 0.997 - 1.003 price
     // for tokens with 18 : 6 decimals
-    // let lowTick = -276350;
-    // let highTick = -276290;
-    // let price = '79244113692861321940131'
+    let lowTick = -276350;
+    let highTick = -276290;
+    let price = '79244113692861321940131'
 
     // 0.997 - 1.003 price
     // for tokens with identical decimals
-    const lowTick = -30;
-    const highTick = 30;
-    // Price = 1
-    const price = getPriceInX96Format(1);
+    // const lowTick = -30;
+    // const highTick = 30;
+    // // Price = 1
+    // const price = getPriceInX96Format(1);
 
     await positionManager.createAndInitializePoolIfNecessary(token0.address, token1.address, 500, price);
     const poolAddress = await uniFactory.getPool(token0.address, token1.address, 500);
@@ -52,7 +52,8 @@ const deploymentFixture = deployments.createFixture(async () => {
     const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
     const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
     await xU3LP.initialize("xU3LP", lowTick, highTick, token0.address, token1.address, 
-        poolAddress, router.address, positionManager.address, 500, 500, 100);
+        poolAddress, router.address, positionManager.address, 
+        {mintFee: 1250, burnFee: 1250, claimFee: 50}, 200, token0Decimals, token1Decimals);
     
 
     // approve xU3LP

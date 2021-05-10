@@ -1,5 +1,5 @@
 const { ethers } = require('hardhat');
-const { deploy, deployArgs, getPriceInX96Format, bnDecimal } = require('../scripts/helpers');
+const { deploy, deployArgs, getPriceInX96Format, bnDecimal, bnDecimals } = require('../scripts/helpers');
 const addresses = require('../scripts/uniswapAddresses.json').kovan;
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json');
@@ -13,19 +13,7 @@ const UniFactory = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Factor
 const deploymentFixture = deployments.createFixture(async () => {
     const signers = await ethers.getSigners();
     let token0 = await deployArgs('DAI', 'DAI', 'DAI');
-    let token1 = await deployArgs('USDC', 'USDC', 'USDC');
-
-    const uniFactory = await ethers.getContractAt(UniFactory.abi, addresses.v3CoreFactoryAddress);
-    const positionManager = await ethers.getContractAt(NFTPositionManager.abi, 
-                                    addresses.nonfungibleTokenPositionManagerAddress);
-    const router = await ethers.getContractAt(swapRouter.abi, 
-                                    addresses.swapRouter);
-
-    // 0.997 - 1.003 price
-    const lowTick = -30;
-    const highTick = 30;
-    // Price = 1
-    const price = getPriceInX96Format(1);
+    let token1 = await deployArgs('USDT', 'USDT', 'USDT');
 
     // Tokens must be sorted by address
     if(token0.address > token1.address) {
@@ -33,6 +21,36 @@ const deploymentFixture = deployments.createFixture(async () => {
       token0 = token1;
       token1 = tmp;
     }
+    const token0Decimals = await token0.decimals();
+    const token1Decimals = await token1.decimals();
+
+    const uniFactory = await ethers.getContractAt(UniFactory.abi, addresses.v3CoreFactoryAddress);
+    const positionManager = await ethers.getContractAt(NFTPositionManager.abi, 
+                                    addresses.nonfungibleTokenPositionManagerAddress);
+    const router = await ethers.getContractAt(swapRouter.abi, 
+                                    addresses.swapRouter);
+
+    let lowTick, highTick, price;
+    if(token0Decimals > token1Decimals) {
+      // 0.997 - 1.003 price
+      // for tokens with 18 : 6 decimals
+      lowTick = -276350;
+      highTick = -276290;
+      price = '79244113692861321940131'
+    } else {
+      // 0.997 - 1.003 price
+      // for tokens with 6 : 18 decimals
+      lowTick = 276290;
+      highTick = 276350;
+      price = '79212214546506452527748886075123928'
+    }
+
+    // 0.997 - 1.003 price
+    // const lowTick = -30;
+    // const highTick = 30;
+    // // Price = 1
+    // const price = getPriceInX96Format(1);
+
     await positionManager.createAndInitializePoolIfNecessary(token0.address, token1.address, 500, price);
     const poolAddress = await uniFactory.getPool(token0.address, token1.address, 500);
     
@@ -40,7 +58,8 @@ const deploymentFixture = deployments.createFixture(async () => {
     const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, signers[3].address);
     const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
     await xU3LP.initialize("xU3LP", lowTick, highTick, token0.address, token1.address, 
-        poolAddress, router.address, positionManager.address, 500, 500, 100);
+        poolAddress, router.address, positionManager.address, 
+        {mintFee: 1250, burnFee: 1250, claimFee: 50}, 200, token0Decimals, token1Decimals);
     
 
     // approve xU3LP
@@ -50,13 +69,13 @@ const deploymentFixture = deployments.createFixture(async () => {
 
     let user = signers[1];
 
-    await token0.transfer(user.address, bnDecimal(10000000));
-    await token1.transfer(user.address, bnDecimal(10000000))
+    await token0.transfer(user.address, bnDecimals(10000000, token0Decimals));
+    await token1.transfer(user.address, bnDecimals(10000000, token1Decimals))
     await token0.connect(user).approve(xU3LP.address, approveAmount);
     await token1.connect(user).approve(xU3LP.address, approveAmount);
 
     return {
-      dai: token0, usdc: token1, router, xU3LP
+      token0, token1, token0Decimals, token1Decimals, router, xU3LP
     }
 });
   

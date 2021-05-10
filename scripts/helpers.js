@@ -175,14 +175,22 @@ async function swapToken1ForToken0(router, token0, token1, swapperAddress, amoun
  * Swap token 0 for token 1 using Uniswap Router, considering token decimals when swapping
  */
 async function swapToken0ForToken1Decimals(router, token0, token1, swapperAddress, amount) {
-    let lowPrice = '79125342561396703567017'
+    let token0Decimals = await token0.decimals();
+    let token1Decimals = await token1.decimals();
+    // prices 6-18 decimals
+    // let lowPrice;
+    if(token0Decimals < token1Decimals) {
+        lowPrice = '79093491225504072495000176441932441'
+    } else if(token1Decimals < token0Decimals) {
+        lowPrice = '79125342561396703567017'
+    } else if(token0Decimals == token1Decimals && token0Decimals == 18) {
+        lowPrice = getPriceInX96Format(0.997);
+    }
     const pendingBlock = await network.provider.send("eth_getBlockByNumber", ["pending", false])
     const timestamp = pendingBlock.timestamp + 10000;
     // tokens should be in precise decimal representation before swapping
     let amountIn = amount;
     let amountOut = amount.sub(amount.div(100));
-    let token0Decimals = await token0.decimals();
-    let token1Decimals = await token1.decimals();
     if(token0Decimals > token1Decimals) {
         let divisor = bn(10).pow(bn(token0Decimals - token1Decimals));
         amountOut = amountOut.div(divisor);
@@ -211,16 +219,23 @@ async function swapToken0ForToken1Decimals(router, token0, token1, swapperAddres
  * Swap token 1 for token 0 using Uniswap Router, considering token decimals when swapping
  */
 async function swapToken1ForToken0Decimals(router, token0, token1, swapperAddress, amount) {
-    //let highPrice = '79363063105786882359298' - 6:18 decimal high price
-    const highPrice = getPriceInX96Format(1.003);
+    let token0Decimals = await token0.decimals();
+    let token1Decimals = await token1.decimals();
+    // prices 6-18 decimals
+    let highPrice;
+    if(token0Decimals < token1Decimals && token0Decimals < 18) {
+        highPrice = '79331116077203858503401008515014641'
+    } else if(token1Decimals < token0Decimals) {
+        highPrice = '79363063105786882359298'
+    } else if(token0Decimals == token1Decimals && token0Decimals == 18) {
+        highPrice = getPriceInX96Format(1.003);
+    }
     const pendingBlock = await network.provider.send("eth_getBlockByNumber", ["pending", false])
     const timestamp = pendingBlock.timestamp + 10000;
 
     // tokens should be in precise decimal representation before swapping
     let amountIn = amount;
     let amountOut = amount.sub(amount.div(100));
-    let token0Decimals = await token0.decimals();
-    let token1Decimals = await token1.decimals();
     if(token0Decimals > token1Decimals) {
         let divisor = bn(10).pow(bn(token0Decimals - token1Decimals));
         amountIn = amountIn.div(divisor);

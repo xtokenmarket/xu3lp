@@ -14,8 +14,10 @@ async function migratePosition() {
     const [admin, proxyAdmin] = await ethers.getSigners();
 
     const dai = await deployArgs('DAI', 'DAI', 'DAI');
-    const usdc = await deployArgs('USDC', 'USDC', 'USDC');
+    const usdc = await deployArgs('sUSD', 'sUSD', 'sUSD');
     const weth = await deployArgs('WETH', 'WETH', 'WETH');
+    let token0Decimals = await dai.decimals();
+    let token1Decimals = await usdc.decimals();
 
     const uniFactory = await deployWithAbi(UniFactory, admin);
     const tokenDescriptor = await deployWithAbi(NFTPositionDescriptor, admin, weth.address);
@@ -36,14 +38,16 @@ async function migratePosition() {
     const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
     const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
     await xU3LP.initialize('xU3LP', lowTick, highTick, dai.address, usdc.address, 
-        poolAddress, router.address, positionManager.address, 500, 500, 100);
+        poolAddress, router.address, positionManager.address,
+        {mintFee: 1250, burnFee: 1250, claimFee: 50}, 200, token0Decimals, token1Decimals);
 
     // xU3LP contract which represents a different position
     const xU3LPImpl2 = await deploy('xU3LPStable');
     const xU3LPProxy2 = await deployArgs('xU3LPStableProxy', xU3LPImpl2.address, proxyAdmin.address);
     const xU3LP2 = await ethers.getContractAt('xU3LPStable', xU3LPProxy2.address);
     await xU3LP2.initialize('xU3LP', -200, 200, dai.address, usdc.address, 
-        poolAddress, router.address, positionManager.address, 500, 500, 100);
+        poolAddress, router.address, positionManager.address,
+        {mintFee: 1250, burnFee: 1250, claimFee: 50}, 200, token0Decimals, token1Decimals);
     
     // approve xU3LP
     let approveAmount = bnDecimal(100000000000000);

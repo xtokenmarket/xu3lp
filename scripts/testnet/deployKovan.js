@@ -1,7 +1,7 @@
 const { ethers } = require('hardhat');
 const { deploy, deployArgs, printPositionAndBufferBalance, getPriceInX96Format, 
-        getNumberNoDecimals, bnDecimal, getRatio, mineBlocks } = require('./helpers');
-const addresses = require('./uniswapAddresses.json').kovan;
+        getNumberNoDecimals, bnDecimal, getRatio, mineBlocks } = require('../helpers');
+const addresses = require('../uniswapAddresses.json').kovan;
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionManager = 
@@ -16,6 +16,14 @@ async function deployXU3LP() {
     const [admin, user1, proxyAdmin] = await ethers.getSigners();
     let token0 = await deployArgs('DAI', 'DAI', 'DAI');
     let token1 = await deployArgs('USDC', 'USDC', 'USDC');
+    // Tokens must be sorted by address
+    if(token0.address > token1.address) {
+      let tmp = token0;
+      token0 = token1;
+      token1 = tmp;
+    }
+    let token0Decimals = await token0.decimals();
+    let token1Decimals = await token1.decimals();
     
     const uniFactory = await ethers.getContractAt(UniFactory.abi, addresses.v3CoreFactoryAddress);
     const positionManager = await ethers.getContractAt(NFTPositionManager.abi, 
@@ -29,12 +37,6 @@ async function deployXU3LP() {
     // Price = 1
     const price = getPriceInX96Format(1);
 
-    // Tokens must be sorted by address
-    if(token0.address > token1.address) {
-      let tmp = token0;
-      token0 = token1;
-      token1 = tmp;
-    }
     await positionManager.createAndInitializePoolIfNecessary(token0.address, token1.address, 500, price);
     const poolAddress = await uniFactory.getPool(token0.address, token1.address, 500);
     
@@ -42,7 +44,8 @@ async function deployXU3LP() {
     const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
     const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
     await xU3LP.initialize('xU3LP', lowTick, highTick, token1.address, token0.address, 
-        poolAddress, router.address, positionManager.address, 500, 500, 100);
+        poolAddress, router.address, positionManager.address,
+        {mintFee: 1250, burnFee: 1250, claimFee: 50}, 200, token0Decimals, token1Decimals);
     
     // approve xU3LP
     let approveAmount = bnDecimal(100000000000000);

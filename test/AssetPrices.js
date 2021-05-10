@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 const { bnDecimal, swapToken0ForToken1Decimals, swapToken1ForToken0Decimals, 
-  increaseTime, mineBlocks, bn, bnDecimals } = require('../scripts/helpers');
+  increaseTime, mineBlocks, bn, bnDecimals, printPositionAndBufferBalance, getTokenPrices } = require('../scripts/helpers');
 const { deploymentFixture } = require('./fixture');
 
 // Asset price retrieval function tests for xU3LP
@@ -74,7 +74,7 @@ describe('Contract: xU3LP', async () => {
 
     it('should mint more xU3LP for asset1 if asset1 price is higher than asset 0', async () => {
       // increase asset 1 price
-      let swapAmount = bnDecimal(15000000);
+      let swapAmount = bnDecimal(17500000);
       await swapToken0ForToken1Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
 
@@ -103,7 +103,7 @@ describe('Contract: xU3LP', async () => {
 
     it('should mint less xU3LP for asset1 if asset1 price is lower than asset 0', async () => {
       // decrease asset 1 price
-      let swapAmount = bnDecimal(15000000);
+      let swapAmount = bnDecimal(17500000);
       await swapToken1ForToken0Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
 
@@ -132,7 +132,7 @@ describe('Contract: xU3LP', async () => {
 
     it('should receive more asset1 on burning for the same xu3lp if asset1 price is lower than asset 0', async () => {
       // decrease asset 1 price
-      let swapAmount = bnDecimal(15000000);
+      let swapAmount = bnDecimal(17500000);
       await swapToken1ForToken0Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
 
@@ -169,7 +169,7 @@ describe('Contract: xU3LP', async () => {
 
     it('should receive less asset1 on burning for the same xu3lp if asset1 price is higher than asset 0', async () => {
       // decrease asset 1 price
-      let swapAmount = bnDecimal(15000000);
+      let swapAmount = bnDecimal(17500000);
       await swapToken0ForToken1Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
 
