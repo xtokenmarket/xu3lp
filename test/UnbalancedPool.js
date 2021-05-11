@@ -1,31 +1,32 @@
 const { expect } = require('chai');
-const { bnDecimal, swapToken0ForToken1, swapToken1ForToken0, 
-        increaseTime, mineBlocks, getBufferPositionRatio } = require('../scripts/helpers');
+const { bnDecimal, swapToken1ForToken0Decimals, swapToken0ForToken1Decimals, increaseTime, 
+      mineBlocks, getBufferPositionRatio, bnDecimals, printPositionAndBufferBalance } = require('../scripts/helpers');
 const { deploymentFixture } = require('./fixture');
 
 // Rebalancing in a unbalanced pool tests for xU3LP
 describe('Contract: xU3LP', async () => {
-  let xU3LP, router, dai, usdc, admin, user1, user2, user3;
+  let xU3LP, router, token0, token1, token0Decimals, token1Decimals, admin, user1, user2, user3;
 
   beforeEach(async () => {
-      ({ xU3LP, dai, usdc, router } = await deploymentFixture());
+      ({ xU3LP, token0, token1, token0Decimals, token1Decimals, router } = await deploymentFixture());
       [admin, user1, user2, user3, ...addrs] = await ethers.getSigners();
-      let mintAmount = bnDecimal(100000000);
-      await xU3LP.mintInitial(mintAmount, mintAmount);
+      let mintAmount = bnDecimals(100000000, token0Decimals);
+      let mintAmount2 = bnDecimals(100000000, token1Decimals);
+      await xU3LP.mintInitial(mintAmount, mintAmount2);
       // approve some tokens for swapping
       let approveAmount = bnDecimal(100000000);
-      await dai.approve(router.address, approveAmount);
-      await usdc.approve(router.address, approveAmount);
+      await token0.approve(router.address, approveAmount);
+      await token1.approve(router.address, approveAmount);
       await xU3LP.rebalance();
   })
 
   describe('Rebalance in unbalanced pool', async () => {
     it('should be able to rebalance in a pool with 1:2 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(30000000);
-      await swapToken1ForToken0(router, dai, usdc, admin.address, swapAmount);
+      await swapToken1ForToken0Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 65M DAI and 125M USDC - ~1:2 ratio
+      // after swap: 65M token0 and 125M token1 - ~1:2 ratio
 
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -56,15 +57,15 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      // mint 1M one side
+      mintAmount = bnDecimals(1000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -72,10 +73,10 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -83,11 +84,11 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to rebalance in a pool with 1:3 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(50000000);
-      await swapToken1ForToken0(router, dai, usdc, admin.address, swapAmount);
+      await swapToken1ForToken0Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 45M DAI and 145M USDC - ~1:3 ratio
+      // after swap: 45M token0 and 145M token1 - ~1:3 ratio
 
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -118,15 +119,15 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      // mint 1M one side
+      mintAmount = bnDecimals(1000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -134,10 +135,10 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -145,11 +146,11 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to rebalance in a pool with 1:5 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(65000000);
-      await swapToken1ForToken0(router, dai, usdc, admin.address, swapAmount);
+      await swapToken1ForToken0Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 30M DAI and 160M USDC - ~1:5 ratio
+      // after swap: 30M token0 and 160M token1 - ~1:5 ratio
       
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -179,7 +180,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -187,7 +188,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      mintAmount = bnDecimals(2000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -195,10 +196,10 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -206,11 +207,11 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to rebalance in a pool with 1:10 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(80000000);
-      await swapToken1ForToken0(router, dai, usdc, admin.address, swapAmount);
+      await swapToken1ForToken0Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 15M DAI and 175M USDC - ~1:10 ratio
+      // after swap: 15M token0 and 175M token1 - ~1:10 ratio
       
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -240,7 +241,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -248,7 +249,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      mintAmount = bnDecimals(2000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -256,10 +257,10 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -267,11 +268,11 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to rebalance in a pool with 1:40 token ratio', async () => {
-      // start: 95M DAI and USDC
-      let swapAmount = bnDecimal(90000000);
-      await swapToken1ForToken0(router, dai, usdc, admin.address, swapAmount);
+      // start: 95M token0 and token1
+      let swapAmount = bnDecimal(88500000);
+      await swapToken1ForToken0Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 5M DAI and 185M USDC - ~1:40 ratio
+      // after swap: 5M token0 and 185M token1 - ~1:40 ratio
 
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -283,7 +284,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -291,7 +292,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      mintAmount = bnDecimals(2000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -299,10 +300,10 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -329,11 +330,11 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to rebalance in a pool with 2:1 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(30000000);
-      await swapToken0ForToken1(router, dai, usdc, admin.address, swapAmount);
+      await swapToken0ForToken1Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 125M DAI and 65M USDC - ~2:1 ratio
+      // after swap: 125M token0 and 65M token1 - ~2:1 ratio
 
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -364,15 +365,15 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      // mint 1M one side
+      mintAmount = bnDecimals(1000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -380,22 +381,22 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
-    })
+    }),
 
     it('should be able to rebalance in a pool with 3:1 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(50000000);
-      await swapToken0ForToken1(router, dai, usdc, admin.address, swapAmount);
+      await swapToken0ForToken1Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 145M DAI and 45M USDC - ~3:1 ratio
+      // after swap: 145M token0 and 45M token1 - ~3:1 ratio
 
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -426,15 +427,15 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      // mint 1M one side
+      mintAmount = bnDecimals(1000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -442,10 +443,10 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -453,11 +454,11 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to rebalance in a pool with 5:1 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(65000000);
-      await swapToken0ForToken1(router, dai, usdc, admin.address, swapAmount);
+      await swapToken0ForToken1Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 160M DAI and 30M USDC - ~5:1 ratio
+      // after swap: 160M token0 and 30M token1 - ~5:1 ratio
 
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -488,7 +489,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -496,7 +497,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      mintAmount = bnDecimals(2000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -504,10 +505,10 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -515,11 +516,11 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('should be able to rebalance in a pool with 10:1 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(80000000);
-      await swapToken0ForToken1(router, dai, usdc, admin.address, swapAmount);
+      await swapToken0ForToken1Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 175M DAI and 15M USDC - ~10:1 ratio
+      // after swap: 175M token0 and 15M token1 - ~10:1 ratio
 
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -550,7 +551,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -558,7 +559,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      mintAmount = bnDecimals(2000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -566,22 +567,22 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await xU3LP.rebalance();
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
-    }),
+     }),
 
     it('should be able to rebalance in a pool with 40:1 token ratio', async () => {
-      // start: 95M DAI and USDC
+      // start: 95M token0 and token1
       let swapAmount = bnDecimal(90000000);
-      await swapToken0ForToken1(router, dai, usdc, admin.address, swapAmount);
+      await swapToken0ForToken1Decimals(router, token0, token1, admin.address, swapAmount);
       await increaseTime(3600);
-      // after swap: 185M DAI and 5M USDC - ~40:1 ratio
+      // after swap: 185M token0 and 5M token1 - ~40:1 ratio
 
       // burn 70% of buffer balance
       let burnAmount = bnDecimal(7000000);
@@ -593,7 +594,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 5M one side
-      let mintAmount = bnDecimal(5000000);
+      let mintAmount = bnDecimals(5000000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -601,7 +602,7 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint 2M one side
-      mintAmount = bnDecimal(2000000);
+      mintAmount = bnDecimals(2000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();
@@ -609,10 +610,10 @@ describe('Contract: xU3LP', async () => {
       expect(bufferPoolRatio).to.be.equal('5.0');
 
       // mint both sides
-      mintAmount = bnDecimal(5000000);
+      mintAmount = bnDecimals(5000000, token0Decimals);
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      mintAmount = bnDecimal(3500000);
+      mintAmount = bnDecimals(3500000, token1Decimals);
       await xU3LP.mintWithToken(1, mintAmount);
       await mineBlocks(5);
       await xU3LP.rebalance();

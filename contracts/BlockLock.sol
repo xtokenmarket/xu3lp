@@ -1,4 +1,4 @@
-pragma solidity ^0.7.6;
+pragma solidity 0.7.6;
 
 /**
  Contract which implements locking of functions via a notLocked modifier
@@ -11,10 +11,7 @@ contract BlockLock {
     mapping(address => uint256) public lastLockedBlock;
 
     modifier notLocked() {
-        require(
-            lastLockedBlock[msg.sender] <= block.number,
-            "Function is locked for this address"
-        );
+        require(lastLockedBlock[msg.sender] <= block.number);
         _;
         lastLockedBlock[msg.sender] = block.number + BLOCK_LOCK_COUNT;
     }

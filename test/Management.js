@@ -1,22 +1,24 @@
 const assert = require('assert');
 const { expect } = require('chai');
-const { bnDecimal, mineBlocks } = require('../scripts/helpers');
+const { bnDecimal, mineBlocks, bnDecimals } = require('../scripts/helpers');
 const { deploymentFixture } = require('./fixture');
 
 // Management functions tests for xU3LP
 describe('Contract: xU3LP', async () => {
-  let xU3LP, dai, usdc, admin, user1, user2, user3;
+  let xU3LP, token0, token1, token0Decimals, token1Decimals, admin, user1, user2, user3;
 
   beforeEach(async () => {
-      ({ xU3LP, dai, usdc } = await deploymentFixture());
+      ({ xU3LP, token0, token1, token0Decimals, token1Decimals } = await deploymentFixture());
       [admin, user1, user2, user3, ...addrs] = await ethers.getSigners();
-      let mintAmount = bnDecimal(100000000);
-      await xU3LP.mintInitial(mintAmount, mintAmount);
+      let mintAmount = bnDecimals(100000000, token0Decimals);
+      let mintAmount2 = bnDecimals(100000000, token1Decimals);
+      await xU3LP.mintInitial(mintAmount, mintAmount2);
       // mint some tokens
-      mintAmount = bnDecimal(1000000)
+      mintAmount = bnDecimals(1000000, token0Decimals)
+      mintAmount2 = bnDecimals(1000000, token1Decimals)
       await xU3LP.mintWithToken(0, mintAmount);
       await mineBlocks(5);
-      await xU3LP.mintWithToken(1, mintAmount);
+      await xU3LP.mintWithToken(1, mintAmount2);
       await mineBlocks(5);
       await xU3LP.rebalance();
       // set managers
@@ -26,10 +28,11 @@ describe('Contract: xU3LP', async () => {
 
   describe('Management', async () => {
     it('should be able to rebalance', async () => {
-        let mintAmount = bnDecimal(1000000)
+        let mintAmount = bnDecimals(1000000, token0Decimals)
+        let mintAmount2 = bnDecimals(1000000, token1Decimals)
         await xU3LP.mintWithToken(0, mintAmount);
         await mineBlocks(5);
-        await xU3LP.mintWithToken(1, mintAmount);
+        await xU3LP.mintWithToken(1, mintAmount2);
         await xU3LP.rebalance();
         assert(true);
     }),
@@ -37,46 +40,46 @@ describe('Contract: xU3LP', async () => {
     it('should be able to migrate position', async () => {
         let prevTokenId = await xU3LP.tokenId();
         let prevTicks = await xU3LP.getTicks();
-        expect(prevTicks.tick0).not.to.equal(-100);
-        expect(prevTicks.tick1).not.to.equal(100);
+        let newTick0 = prevTicks.tick0 - 20;
+        let newTick1 = prevTicks.tick1 + 20;
 
-        await xU3LP.migratePosition(-100, 100);
+        await xU3LP.migratePosition(newTick0, newTick1);
         let newTicks = await xU3LP.getTicks();
         let newTokenId = await xU3LP.tokenId();
 
-        expect(newTicks.tick0).to.equal(-100);
-        expect(newTicks.tick1).to.equal(100);
+        expect(newTicks.tick0).to.equal(newTick0);
+        expect(newTicks.tick1).to.equal(newTick1);
         expect(prevTokenId).not.to.equal(newTokenId);
     }),
 
     it('should allow admin to collect fees', async () => {
-        let adminToken0BalanceBefore = await dai.balanceOf(admin.address);
+        let adminToken0BalanceBefore = await token0.balanceOf(admin.address);
         let feesToken0 = await xU3LP.withdrawableToken0Fees();
         expect(feesToken0).not.equal(0);
 
         await xU3LP.withdrawFees();
         feesToken0 = await xU3LP.withdrawableToken0Fees();
-        let adminToken0BalanceAfter = await dai.balanceOf(admin.address);
+        let adminToken0BalanceAfter = await token0.balanceOf(admin.address);
 
         expect(feesToken0).to.equal(0);
         expect(adminToken0BalanceBefore).lt(adminToken0BalanceAfter);
     }),
 
     it('should allow managers to collect fees', async () => {
-        let managerToken0BalanceBefore = await dai.balanceOf(user1.address);
+        let managerToken0BalanceBefore = await token0.balanceOf(user1.address);
         let feesToken0 = await xU3LP.withdrawableToken0Fees();
         expect(feesToken0).not.equal(0);
 
         await xU3LP.connect(user1).withdrawFees();
         feesToken0 = await xU3LP.withdrawableToken0Fees();
-        let managerToken0BalanceAfter = await dai.balanceOf(user1.address);
+        let managerToken0BalanceAfter = await token0.balanceOf(user1.address);
 
         expect(feesToken0).to.equal(0);
         expect(managerToken0BalanceBefore).lt(managerToken0BalanceAfter);
     }),
 
     it('should be able to set fee divisors', async () => {
-        await xU3LP.setFeeDivisors(100, 200, 500);
+        await xU3LP.setFeeDivisors({mintFee: 100, burnFee: 200, claimFee: 500});
 
         let feeDivisors = await xU3LP.feeDivisors();
 
@@ -105,17 +108,17 @@ describe('Contract: xU3LP', async () => {
     }),
 
     it('shouldn\'t be able to transfer out LP tokens from the contract', async () => {
-      await expect(xU3LP.withdrawToken(dai.address, admin.address)).
-        to.be.revertedWith('Only non-LP tokens can be withdrawn');
-      await expect(xU3LP.withdrawToken(usdc.address, admin.address)).
-        to.be.revertedWith('Only non-LP tokens can be withdrawn');
+      await expect(xU3LP.withdrawToken(token0.address, admin.address)).
+        to.be.reverted;
+      await expect(xU3LP.withdrawToken(token1.address, admin.address)).
+        to.be.reverted;
     }),
 
     it('should be able to stake without rebalancing', async () => {
       let bufferBalanceBefore = await xU3LP.getBufferTokenBalance();
       let stakedBalanceBefore = await xU3LP.getStakedTokenBalance();
 
-      await xU3LP.adminStake(bnDecimal(1000), bnDecimal(1000));
+      await xU3LP.adminStake(bnDecimals(1000, token0Decimals), bnDecimals(1000, token1Decimals));
 
       let bufferBalanceAfter = await xU3LP.getBufferTokenBalance();
       let stakedBalanceAfter = await xU3LP.getStakedTokenBalance();
@@ -131,7 +134,7 @@ describe('Contract: xU3LP', async () => {
       let bufferBalanceBefore = await xU3LP.getBufferTokenBalance();
       let stakedBalanceBefore = await xU3LP.getStakedTokenBalance();
 
-      await xU3LP.adminUnstake(bnDecimal(1000), bnDecimal(1000));
+      await xU3LP.adminUnstake(bnDecimals(1000, token0Decimals), bnDecimals(1000, token1Decimals));
 
       let bufferBalanceAfter = await xU3LP.getBufferTokenBalance();
       let stakedBalanceAfter = await xU3LP.getStakedTokenBalance();

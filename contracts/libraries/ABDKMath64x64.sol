@@ -3,7 +3,7 @@
  * ABDK Math 64.64 Smart Contract Library.  Copyright © 2019 by ABDK Consulting.
  * Author: Mikhail Vladimirov <mikhail.vladimirov@gmail.com>
  */
-pragma solidity ^0.7.6;
+pragma solidity 0.7.6;
 
 /**
  * Smart contract library of mathematical functions operating with signed
@@ -93,6 +93,19 @@ library ABDKMath64x64 {
      */
     function sub(int128 x, int128 y) internal pure returns (int128) {
         int256 result = int256(x) - y;
+        require(result >= MIN_64x64 && result <= MAX_64x64);
+        return int128(result);
+    }
+
+    /**
+     * Calculate x * y rounding down.  Revert on overflow.
+     *
+     * @param x signed 64.64-bit fixed point number
+     * @param y signed 64.64-bit fixed point number
+     * @return signed 64.64-bit fixed point number
+     */
+    function mul(int128 x, int128 y) internal pure returns (int128) {
+        int256 result = (int256(x) * y) >> 64;
         require(result >= MIN_64x64 && result <= MAX_64x64);
         return int128(result);
     }

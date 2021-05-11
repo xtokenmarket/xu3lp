@@ -1,22 +1,22 @@
 const { ethers } = require('hardhat');
-const { deploy, deployArgs, deployWithAbi, printPositionAndBufferBalance, getPriceInX96Format, 
-        getNumberNoDecimals, bnDecimal, getRatio, mineBlocks } = require('./helpers');
+const { deploy, deployArgs, printPositionAndBufferBalance, getPriceInX96Format, 
+        getNumberNoDecimals, bnDecimal, getRatio, mineBlocks } = require('../helpers');
+const addresses = require('../uniswapAddresses.json').kovan;
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
-const NFTPositionDescriptor =
- require('@uniswap/v3-periphery/artifacts/contracts/NonFungibleTokenPositionDescriptor.sol/NonFungibleTokenPositionDescriptor.json');
 const NFTPositionManager = 
 require('@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json');
-
 const UniFactory = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json');
 
+/**
+ * Testnet fork script designed to work with Uniswap Kovan deployment
+ * Need to connect to alchemy Kovan node and enable forking in hardhat config before running
+ */
 async function deployXU3LP() {
     const [admin, user1, proxyAdmin] = await ethers.getSigners();
-
-    const token0 = await deployArgs('DAI', 'DAI', 'DAI');
-    const token1 = await deployArgs('sUSD', 'sUSD', 'sUSD');
-    const weth = await deployArgs('WETH', 'WETH', 'WETH');
-    // Swap addresses if they aren't ordered
+    let token0 = await deployArgs('DAI', 'DAI', 'DAI');
+    let token1 = await deployArgs('USDC', 'USDC', 'USDC');
+    // Tokens must be sorted by address
     if(token0.address > token1.address) {
       let tmp = token0;
       token0 = token1;
@@ -25,11 +25,11 @@ async function deployXU3LP() {
     let token0Decimals = await token0.decimals();
     let token1Decimals = await token1.decimals();
     
-    const uniFactory = await deployWithAbi(UniFactory, admin);
-    const tokenDescriptor = await deployWithAbi(NFTPositionDescriptor, admin, weth.address);
-    const positionManager = await deployWithAbi(NFTPositionManager, admin, 
-                                                uniFactory.address, weth.address, tokenDescriptor.address);
-    const router = await deployWithAbi(swapRouter, admin, uniFactory.address, weth.address);
+    const uniFactory = await ethers.getContractAt(UniFactory.abi, addresses.v3CoreFactoryAddress);
+    const positionManager = await ethers.getContractAt(NFTPositionManager.abi, 
+                                    addresses.nonfungibleTokenPositionManagerAddress);
+    const router = await ethers.getContractAt(swapRouter.abi, 
+                                    addresses.swapRouter);
 
     // 0.997 - 1.003 price
     const lowTick = -60;
@@ -43,7 +43,7 @@ async function deployXU3LP() {
     const xU3LPImpl = await deploy('xU3LPStable');
     const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
     const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
-    await xU3LP.initialize('xU3LP', lowTick, highTick, token0.address, token1.address, 
+    await xU3LP.initialize('xU3LP', lowTick, highTick, token1.address, token0.address, 
         poolAddress, router.address, positionManager.address,
         {mintFee: 1250, burnFee: 1250, claimFee: 50}, 200, token0Decimals, token1Decimals);
     
