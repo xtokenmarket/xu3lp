@@ -111,12 +111,14 @@ contract xU3LPStable is
         if (_token0 > _token1) {
             token0 = _token1;
             token1 = _token0;
+            token0Decimals = _token1Decimals;
+            token1Decimals = _token0Decimals;
         } else {
             token0 = _token0;
             token1 = _token1;
+            token0Decimals = _token0Decimals;
+            token1Decimals = _token1Decimals;
         }
-        token0Decimals = _token0Decimals;
-        token1Decimals = _token1Decimals;
         token0DecimalMultiplier =
             10**(TOKEN_DECIMAL_REPRESENTATION - token0Decimals);
         token1DecimalMultiplier =
@@ -373,6 +375,7 @@ contract xU3LPStable is
             Utils.subAbs(bufferToken1Balance, targetToken1Balance);
         _amount0 = getToken0AmountInNativeDecimals(_amount0);
         _amount1 = getToken1AmountInNativeDecimals(_amount1);
+
         (uint256 amount0, uint256 amount1) =
             checkIfAmountsMatchAndSwap(_amount0, _amount1);
 
@@ -448,13 +451,12 @@ contract xU3LPStable is
             // calculate liquidity ratio
             uint256 mintLiquidity =
                 getLiquidityForAmounts(amount0ToMint, amount1ToMint);
-            uint256 positionLiquidity =
-                tokenId == 0 ? 0 : getPositionLiquidity();
+            uint256 poolLiquidity = getPoolLiquidity();
             int128 liquidityRatio =
-                positionLiquidity == 0
+                poolLiquidity == 0
                     ? 0
                     : int128(
-                        ABDKMath64x64.divuu(mintLiquidity, positionLiquidity)
+                        ABDKMath64x64.divuu(mintLiquidity, poolLiquidity)
                     );
             (amount0, amount1) = restoreTokenRatios(
                 amount0ToMint,
@@ -914,6 +916,11 @@ contract xU3LPStable is
     function getPoolPrice() private view returns (uint160) {
         (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
         return sqrtRatioX96;
+    }
+
+    // Returns the current pool liquidity
+    function getPoolLiquidity() private view returns (uint128) {
+        return pool.liquidity();
     }
 
     // Returns the latest oracle observation time
