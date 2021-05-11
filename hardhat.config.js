@@ -11,12 +11,14 @@ require('dotenv').config();
 module.exports = {
   networks: {
     hardhat: {
-      // comment out for local testing
-			// uncomment for fork script
-			// forking: {
-			// 	url: process.env.ALCHEMY_URL,
-      //   blockNumber: 12408381
-			// },
+			forking: {
+				url: process.env.ALCHEMY_URL,
+        enabled: false
+			}
+    },
+    mainnet: {
+      url: process.env.ALCHEMY_URL,
+      accounts: [process.env.ADMIN_PRIVATE_KEY]
     }
   },
   etherscan: {
