@@ -10,9 +10,9 @@ contract BlockLock {
     // last block for which this address is timelocked
     mapping(address => uint256) public lastLockedBlock;
 
-    modifier notLocked() {
-        require(lastLockedBlock[msg.sender] <= block.number);
+    modifier notLocked(address lockedAddress) {
+        require(lastLockedBlock[lockedAddress] <= block.number);
         _;
-        lastLockedBlock[msg.sender] = block.number + BLOCK_LOCK_COUNT;
+        lastLockedBlock[lockedAddress] = block.number + BLOCK_LOCK_COUNT;
     }
 }

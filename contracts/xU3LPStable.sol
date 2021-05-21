@@ -156,7 +156,7 @@ contract xU3LPStable is
      */
     function mintWithToken(uint8 inputAsset, uint256 amount)
         external
-        notLocked()
+        notLocked(msg.sender)
         whenNotPaused()
     {
         require(amount > 0, "Must send token");
@@ -183,7 +183,7 @@ contract xU3LPStable is
      *  @dev Burn *amount* of xU3LP tokens to receive proportional
      *  amount of *outputAsset* tokens
      */
-    function burn(uint8 outputAsset, uint256 amount) external notLocked() {
+    function burn(uint8 outputAsset, uint256 amount) external notLocked(msg.sender) {
         require(amount > 0, "Must redeem token");
         checkTwap();
         uint256 bufferBalance = getBufferBalance();
@@ -225,7 +225,7 @@ contract xU3LPStable is
     function transfer(address recipient, uint256 amount)
         public
         override
-        notLocked()
+        notLocked(msg.sender)
         returns (bool)
     {
         return super.transfer(recipient, amount);
@@ -235,7 +235,7 @@ contract xU3LPStable is
         address sender,
         address recipient,
         uint256 amount
-    ) public override notLocked() returns (bool) {
+    ) public override notLocked(sender) returns (bool) {
         return super.transferFrom(sender, recipient, amount);
     }
 
