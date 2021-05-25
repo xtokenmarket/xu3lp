@@ -160,6 +160,7 @@ contract xU3LPStable is
         whenNotPaused()
     {
         require(amount > 0, "Must send token");
+        lock(msg.sender);
         checkTwap();
         uint256 fee;
         if (inputAsset == 0) {
@@ -185,6 +186,7 @@ contract xU3LPStable is
      */
     function burn(uint8 outputAsset, uint256 amount) external notLocked(msg.sender) {
         require(amount > 0, "Must redeem token");
+        lock(msg.sender);
         checkTwap();
         uint256 bufferBalance = getBufferBalance();
         uint256 totalBalance = bufferBalance.add(getStakedBalance());
