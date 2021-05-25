@@ -41,20 +41,37 @@ describe('Contract: xU3LP', async () => {
             to.be.reverted;
     }),
 
-    it('account shouldn\'t be able to call transfer, mint and burn before 6 blocks have been mined', async () => {
-        await xU3LP.transfer(user1.address, bnDecimal(10000));
-        await expect(xU3LP.mintWithToken(0, bnDecimals(100000, token0Decimals))).
+    it(`no account should be able to call transferFrom from sender address
+         which has called mint before 6 blocks have been mined`, async () => {
+        await xU3LP.approve(user1.address, bnDecimal(100000));
+        await xU3LP.approve(user2.address, bnDecimal(100000));
+        await xU3LP.mintWithToken(0, bnDecimals(10000, token0Decimals));
+        await expect(xU3LP.connect(user1).transferFrom(admin.address, user1.address, bnDecimal(10000))).
             to.be.reverted;
-        await expect(xU3LP.burn(0, bnDecimal(100000))).
+        await expect(xU3LP.connect(user2).transferFrom(admin.address, user1.address, bnDecimal(10000))).
             to.be.reverted;
     }),
 
-    it('account should be able to call mint, burn or transfer if >= 6 blocks have been mined', async () => {
+    it(`no account should be able to call transferFrom from sender address
+         which has called burn before 6 blocks have been mined`, async () => {
+        await xU3LP.approve(user1.address, bnDecimal(100000));
+        await xU3LP.approve(user2.address, bnDecimal(100000));
+        await xU3LP.burn(0, bnDecimal(100000));
+        await expect(xU3LP.connect(user1).transferFrom(admin.address, user1.address, bnDecimal(10000))).
+            to.be.reverted;
+        await expect(xU3LP.connect(user2).transferFrom(admin.address, user1.address, bnDecimal(10000))).
+            to.be.reverted;
+    }),
+
+    it('account should be able to call mint, burn, transfer or transferFrom if >= 6 blocks have been mined', async () => {
         await xU3LP.mintWithToken(0, bnDecimals(100000, token0Decimals));
         await mineBlocks(5);
         await xU3LP.burn(0, bnDecimal(100000));
         await mineBlocks(5);
         await xU3LP.transfer(user1.address, bnDecimal(10000));
+        await mineBlocks(5);
+        await xU3LP.approve(user1.address, bnDecimal(10000));
+        await xU3LP.connect(user1).transferFrom(admin.address, user1.address, bnDecimal(10000));
     }),
 
     it('other accounts should be able to call mint even if one is locked', async () => {
@@ -79,6 +96,16 @@ describe('Contract: xU3LP', async () => {
             to.be.reverted;
         await xU3LP.connect(user1).transfer(user2.address, bnDecimal(10000));
         await xU3LP.connect(user2).transfer(user1.address, bnDecimal(10000));
+    }),
+
+    it('other accounts should be able to call transferFrom even if one is locked', async () => {
+        await xU3LP.connect(user1).approve(user2.address, bnDecimals(10000, token0Decimals));
+        await xU3LP.connect(user2).approve(user1.address, bnDecimals(10000, token0Decimals));
+        await xU3LP.mintWithToken(0, bnDecimals(100000, token0Decimals));
+        await expect(xU3LP.mintWithToken(0, bnDecimals(100000, token0Decimals))).
+            to.be.reverted;
+        await xU3LP.connect(user1).transferFrom(user2.address, user1.address, bnDecimal(10000));
+        await xU3LP.connect(user2).transferFrom(user1.address, user2.address, bnDecimal(10000));
     })
   })
 })
