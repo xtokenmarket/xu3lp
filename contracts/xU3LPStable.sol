@@ -631,8 +631,7 @@ contract xU3LPStable is
      */
     function emergencyUnstake(uint256 _amount0, uint256 _amount1) external {
         require(
-            adminActiveTimestamp.add(LIQUIDATION_TIME_PERIOD) < block.timestamp,
-            "Liquidation time not elapsed"
+            adminActiveTimestamp.add(LIQUIDATION_TIME_PERIOD) < block.timestamp
         );
         _unstake(_amount0, _amount1);
     }
@@ -1031,6 +1030,7 @@ contract xU3LPStable is
      * Set the oracle reading twap period
      */
     function setTwapPeriod(uint32 newPeriod) external onlyOwnerOrManager {
+        require(newPeriod >= 360);
         twapPeriod = newPeriod;
     }
 
