@@ -146,7 +146,7 @@ contract xU3LPStable is
             type(uint256).max
         );
 
-        lastTwap = getAsset1Price();
+        lastTwap = getAsset0Price();
         _setFeeDivisors(_feeDivisors);
     }
 
@@ -252,9 +252,9 @@ contract xU3LPStable is
         return getStakedBalance().add(getBufferBalance());
     }
 
-    // Get asset 0 twap price
-    function getAsset0Price() public view returns (int128) {
-        return ABDKMath64x64.inv(getAsset1Price());
+    // Get asset 1 twap
+    function getAsset1Price() public view returns (int128) {
+        return ABDKMath64x64.inv(getAsset0Price());
     }
 
     // Returns amount in terms of asset0
@@ -947,11 +947,11 @@ contract xU3LPStable is
     }
 
     /**
-     *  Get asset 1 twap price
+     *  Get asset 0 twap
      *  Uses Uni V3 oracle, reading the TWAP from twap period
      *  or the earliest oracle observation time if twap period is not set
      */
-    function getAsset1Price() public view returns (int128) {
+    function getAsset0Price() public view returns (int128) {
         uint32[] memory secondsArray = new uint32[](2);
         // get earliest oracle observation time
         uint32 observationTime = getObservationTime();
@@ -965,6 +965,9 @@ contract xU3LPStable is
                 currTimestamp - twapPeriod
             )
         ) {
+            // set to earliest observation time if:
+            // a) twap period is 0 (not set)
+            // b) now - twap period is before earliest observation
             secondsArray[0] = earliestObservationSecondsAgo;
         } else {
             secondsArray[0] = twapPeriod;
@@ -973,12 +976,14 @@ contract xU3LPStable is
         (int56[] memory prices, ) = pool.observe(secondsArray);
 
         int128 twap = Utils.getTWAP(prices, secondsArray[0]);
-        if (token0Decimals > token1Decimals) {
+        if (token1Decimals > token0Decimals) {
+            // divide twap by token decimal difference
             twap = ABDKMath64x64.mul(
                 twap,
                 ABDKMath64x64.divu(1, tokenDiffDecimalMultiplier)
             );
-        } else if (token1Decimals > token0Decimals) {
+        } else if (token0Decimals > token1Decimals) {
+            // multiply twap by token decimal difference
             int128 multiplierFixed =
                 ABDKMath64x64.fromUInt(tokenDiffDecimalMultiplier);
             twap = ABDKMath64x64.mul(twap, multiplierFixed);
@@ -990,7 +995,7 @@ contract xU3LPStable is
      * Checks if twap deviates too much from the previous twap
      */
     function checkTwap() private {
-        int128 twap = getAsset1Price();
+        int128 twap = getAsset0Price();
         int128 _lastTwap = lastTwap;
         int128 deviation =
             _lastTwap > twap ? _lastTwap - twap : twap - _lastTwap;
@@ -1008,7 +1013,7 @@ contract xU3LPStable is
      *  Requires twap to be above max deviation to execute
      */
     function resetTwap() external onlyOwnerOrManager {
-        lastTwap = getAsset1Price();
+        lastTwap = getAsset0Price();
     }
 
     /**
