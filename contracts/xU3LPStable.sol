@@ -970,11 +970,6 @@ contract xU3LPStable is
             secondsArray[0] = twapPeriod;
         }
         secondsArray[1] = 0;
-
-        // uninitialized pool safety check
-        if (observationTime >= currTimestamp) {
-            return ABDKMath64x64.fromInt(1);
-        }
         (int56[] memory prices, ) = pool.observe(secondsArray);
 
         int128 twap = Utils.getTWAP(prices, secondsArray[0]);
