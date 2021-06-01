@@ -165,17 +165,15 @@ contract xU3LPStable is
         require(amount > 0);
         lock(msg.sender);
         checkTwap();
-        uint256 fee;
+        uint256 fee = Utils.calculateFee(amount, feeDivisors.mintFee);
         if (inputAsset == 0) {
             token0.safeTransferFrom(msg.sender, address(this), amount);
-            fee = Utils.calculateFee(amount, feeDivisors.mintFee);
             _incrementWithdrawableToken0Fees(fee);
             _mintInternal(
                 getToken0AmountInWei(getAmountInAsset1Terms(amount).sub(fee))
             );
         } else {
             token1.safeTransferFrom(msg.sender, address(this), amount);
-            fee = Utils.calculateFee(amount, feeDivisors.mintFee);
             _incrementWithdrawableToken1Fees(fee);
             _mintInternal(
                 getToken1AmountInWei(getAmountInAsset0Terms(amount).sub(fee))
@@ -336,8 +334,7 @@ contract xU3LPStable is
         amount0 = bufferAmount0.add(poolAmount0).div(BUFFER_TARGET);
         amount1 = bufferAmount1.add(poolAmount1).div(BUFFER_TARGET);
         // Keep 50:50 ratio
-        uint256 targetTotalAmount = amount0.add(amount1);
-        amount0 = targetTotalAmount.div(2);
+        amount0 = amount0.add(amount1).div(2);
         amount1 = amount0;
     }
 
@@ -418,7 +415,7 @@ contract xU3LPStable is
     }
 
     // Collect fees
-    function _collect() private {
+    function _collect() public onlyOwnerOrManager {
         (uint256 collected0, uint256 collected1) =
             collectPosition(type(uint128).max, type(uint128).max);
 
@@ -500,8 +497,7 @@ contract xU3LPStable is
     {
         // Collect fees
         _collect();
-        uint128 liquidity = getPositionLiquidity();
-        (_amount0, _amount1) = unstakePosition(liquidity);
+        (_amount0, _amount1) = unstakePosition(getPositionLiquidity());
         collectPosition(uint128(_amount0), uint128(_amount1));
     }
 
