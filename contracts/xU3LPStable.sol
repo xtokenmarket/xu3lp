@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.7.6;
 pragma abicoder v2;
 
@@ -79,6 +80,8 @@ contract xU3LPStable is
 
     FeeDivisors public feeDivisors;
 
+    uint32 twapPeriod;
+
     event Rebalance();
     event PositionInitialized(int24 tickLower, int24 tickUpper);
     event PositionMigrated(int24 tickLower, int24 tickUpper);
@@ -143,7 +146,7 @@ contract xU3LPStable is
             type(uint256).max
         );
 
-        lastTwap = getAsset1Price();
+        lastTwap = getAsset0Price();
         _setFeeDivisors(_feeDivisors);
     }
 
@@ -159,20 +162,18 @@ contract xU3LPStable is
         notLocked(msg.sender)
         whenNotPaused()
     {
-        require(amount > 0, "Must send token");
+        require(amount > 0);
         lock(msg.sender);
         checkTwap();
-        uint256 fee;
+        uint256 fee = Utils.calculateFee(amount, feeDivisors.mintFee);
         if (inputAsset == 0) {
             token0.safeTransferFrom(msg.sender, address(this), amount);
-            fee = Utils.calculateFee(amount, feeDivisors.mintFee);
             _incrementWithdrawableToken0Fees(fee);
             _mintInternal(
                 getToken0AmountInWei(getAmountInAsset1Terms(amount).sub(fee))
             );
         } else {
             token1.safeTransferFrom(msg.sender, address(this), amount);
-            fee = Utils.calculateFee(amount, feeDivisors.mintFee);
             _incrementWithdrawableToken1Fees(fee);
             _mintInternal(
                 getToken1AmountInWei(getAmountInAsset0Terms(amount).sub(fee))
@@ -184,8 +185,11 @@ contract xU3LPStable is
      *  @dev Burn *amount* of xU3LP tokens to receive proportional
      *  amount of *outputAsset* tokens
      */
-    function burn(uint8 outputAsset, uint256 amount) external notLocked(msg.sender) {
-        require(amount > 0, "Must redeem token");
+    function burn(uint8 outputAsset, uint256 amount)
+        external
+        notLocked(msg.sender)
+    {
+        require(amount > 0);
         lock(msg.sender);
         checkTwap();
         uint256 bufferBalance = getBufferBalance();
@@ -246,9 +250,9 @@ contract xU3LPStable is
         return getStakedBalance().add(getBufferBalance());
     }
 
-    // Get asset 0 twap price
-    function getAsset0Price() public view returns (int128) {
-        return ABDKMath64x64.inv(getAsset1Price());
+    // Get asset 1 twap
+    function getAsset1Price() public view returns (int128) {
+        return ABDKMath64x64.inv(getAsset0Price());
     }
 
     // Returns amount in terms of asset0
@@ -330,8 +334,7 @@ contract xU3LPStable is
         amount0 = bufferAmount0.add(poolAmount0).div(BUFFER_TARGET);
         amount1 = bufferAmount1.add(poolAmount1).div(BUFFER_TARGET);
         // Keep 50:50 ratio
-        uint256 targetTotalAmount = amount0.add(amount1);
-        amount0 = targetTotalAmount.div(2);
+        amount0 = amount0.add(amount1).div(2);
         amount1 = amount0;
     }
 
@@ -407,23 +410,12 @@ contract xU3LPStable is
 
     function _unstake(uint256 amount0, uint256 amount1) private {
         uint128 liquidityAmount = getLiquidityForAmounts(amount0, amount1);
-
-        (uint256 _amount0, uint256 _amount1) =
-            positionManager.decreaseLiquidity(
-                INonfungiblePositionManager.DecreaseLiquidityParams({
-                    tokenId: tokenId,
-                    liquidity: liquidityAmount,
-                    amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                    amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                    deadline: block.timestamp
-                })
-            );
-
+        (uint256 _amount0, uint256 _amount1) = unstakePosition(liquidityAmount);
         collectPosition(uint128(_amount0), uint128(_amount1));
     }
 
     // Collect fees
-    function _collect() private {
+    function _collect() public onlyOwnerOrManager {
         (uint256 collected0, uint256 collected1) =
             collectPosition(type(uint128).max, type(uint128).max);
 
@@ -457,9 +449,7 @@ contract xU3LPStable is
             int128 liquidityRatio =
                 poolLiquidity == 0
                     ? 0
-                    : int128(
-                        ABDKMath64x64.divuu(mintLiquidity, poolLiquidity)
-                    );
+                    : int128(ABDKMath64x64.divuu(mintLiquidity, poolLiquidity));
             (amount0, amount1) = restoreTokenRatios(
                 amount0ToMint,
                 amount1ToMint,
@@ -507,17 +497,7 @@ contract xU3LPStable is
     {
         // Collect fees
         _collect();
-        uint128 liquidity = getPositionLiquidity();
-        (uint256 amount0, uint256 amount1) = getAmountsForLiquidity(liquidity);
-        (_amount0, _amount1) = positionManager.decreaseLiquidity(
-            INonfungiblePositionManager.DecreaseLiquidityParams({
-                tokenId: tokenId,
-                liquidity: liquidity,
-                amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                deadline: block.timestamp
-            })
-        );
+        (_amount0, _amount1) = unstakePosition(getPositionLiquidity());
         collectPosition(uint128(_amount0), uint128(_amount1));
     }
 
@@ -610,6 +590,29 @@ contract xU3LPStable is
         );
     }
 
+    /**
+     * @dev Unstakes a given amount of liquidity from the Uni V3 position
+     * @param liquidity amount of liquidity to unstake
+     * @return amount0 token0 amount unstaked
+     * @return amount1 token1 amount unstaked
+     */
+    function unstakePosition(uint128 liquidity)
+        private
+        returns (uint256 amount0, uint256 amount1)
+    {
+        (uint256 _amount0, uint256 _amount1) =
+            getAmountsForLiquidity(liquidity);
+        (amount0, amount1) = positionManager.decreaseLiquidity(
+            INonfungiblePositionManager.DecreaseLiquidityParams({
+                tokenId: tokenId,
+                liquidity: liquidity,
+                amount0Min: _amount0.sub(_amount0.div(MINT_BURN_SLIPPAGE)),
+                amount1Min: _amount1.sub(_amount1.div(MINT_BURN_SLIPPAGE)),
+                deadline: block.timestamp
+            })
+        );
+    }
+
     /*
      * @notice Registers that admin is present and active
      * @notice If admin isn't certified within liquidation time period,
@@ -624,8 +627,7 @@ contract xU3LPStable is
      */
     function emergencyUnstake(uint256 _amount0, uint256 _amount1) external {
         require(
-            adminActiveTimestamp.add(LIQUIDATION_TIME_PERIOD) < block.timestamp,
-            "Liquidation time not elapsed"
+            adminActiveTimestamp.add(LIQUIDATION_TIME_PERIOD) < block.timestamp
         );
         _unstake(_amount0, _amount1);
     }
@@ -668,7 +670,6 @@ contract xU3LPStable is
         feeDivisors.mintFee = _feeDivisors.mintFee;
         feeDivisors.burnFee = _feeDivisors.burnFee;
         feeDivisors.claimFee = _feeDivisors.claimFee;
-
         emit FeeDivisorsSet(
             feeDivisors.mintFee,
             feeDivisors.burnFee,
@@ -844,24 +845,8 @@ contract xU3LPStable is
 
         if (mul1 > mul2) {
             if (balance0 < swapAmountWithSlippage) {
-                // Not enough balance to swap
-                (uint256 unstakeAmount0, uint256 unstakeAmount1) =
-                    calculatePoolMintedAmounts(
-                        getToken0AmountInNativeDecimals(swapAmountWithSlippage),
-                        getToken1AmountInNativeDecimals(swapAmountWithSlippage)
-                    );
-                uint256 balanceSwapAmount =
-                    getToken1AmountInWei(unstakeAmount1);
-                do {
-                    _unstake(unstakeAmount0, unstakeAmount1);
-                    swapToken1ForToken0(
-                        balanceSwapAmount.add(
-                            balanceSwapAmount.div(SWAP_SLIPPAGE)
-                        ),
-                        balanceSwapAmount
-                    );
-                    balance0 = getBufferToken0Balance();
-                } while (balance0 < swapAmountWithSlippage);
+                // withdraw enough balance to swap
+                withdrawSingleToken(true, swapAmountWithSlippage);
                 // balances are not the same as before, so go back to rebalancing
                 _provideOrRemoveLiquidity();
                 return (0, 0);
@@ -876,24 +861,8 @@ contract xU3LPStable is
             );
         } else if (mul1 < mul2) {
             if (balance1 < swapAmountWithSlippage) {
-                // Not enough balance to swap
-                (uint256 unstakeAmount0, uint256 unstakeAmount1) =
-                    calculatePoolMintedAmounts(
-                        getToken0AmountInNativeDecimals(swapAmountWithSlippage),
-                        getToken1AmountInNativeDecimals(swapAmountWithSlippage)
-                    );
-                uint256 balanceSwapAmount =
-                    getToken0AmountInWei(unstakeAmount0);
-                do {
-                    _unstake(unstakeAmount0, unstakeAmount1);
-                    swapToken0ForToken1(
-                        balanceSwapAmount.add(
-                            balanceSwapAmount.div(SWAP_SLIPPAGE)
-                        ),
-                        balanceSwapAmount
-                    );
-                    balance1 = getBufferToken1Balance();
-                } while (balance1 < swapAmountWithSlippage);
+                // withdraw enough balance to swap
+                withdrawSingleToken(false, swapAmountWithSlippage);
                 // balances are not the same as before, so go back to rebalancing
                 _provideOrRemoveLiquidity();
                 return (0, 0);
@@ -907,6 +876,44 @@ contract xU3LPStable is
                 getToken1AmountInNativeDecimals(swapAmount)
             );
         }
+    }
+
+    /**
+     *  @dev Withdraw until token0 or token1 balance reaches amount
+     *  @param forToken0 withdraw balance for token0 (true) or token1 (false)
+     *  @param amount minimum amount we want to have in token0 or token1
+     */
+    function withdrawSingleToken(bool forToken0, uint256 amount) private {
+        uint256 balance;
+        uint256 unstakeAmount0;
+        uint256 unstakeAmount1;
+        uint256 swapAmount;
+        do {
+            // calculate how much we can withdraw
+            (unstakeAmount0, unstakeAmount1) = calculatePoolMintedAmounts(
+                getToken0AmountInNativeDecimals(amount),
+                getToken1AmountInNativeDecimals(amount)
+            );
+            // withdraw both tokens
+            _unstake(unstakeAmount0, unstakeAmount1);
+
+            // swap the excess amount of token0 for token1 or vice-versa
+            swapAmount = forToken0
+                ? getToken1AmountInWei(unstakeAmount1)
+                : getToken0AmountInWei(unstakeAmount0);
+            forToken0
+                ? swapToken1ForToken0(
+                    swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
+                    swapAmount
+                )
+                : swapToken0ForToken1(
+                    swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
+                    swapAmount
+                );
+            balance = forToken0
+                ? getBufferToken0Balance()
+                : getBufferToken1Balance();
+        } while (balance < amount);
     }
 
     // Returns the current liquidity in the position
@@ -925,46 +932,54 @@ contract xU3LPStable is
         return pool.liquidity();
     }
 
-    // Returns the latest oracle observation time
-    function getObservationTime() private view returns (uint32) {
-        (, , uint16 observationIndex, , , , ) = pool.slot0();
-        (uint32 observationTime, , , ) = pool.observations(observationIndex);
+    // Returns the earliest oracle observation time
+    function getObservationTime() public view returns (uint32) {
+        (, , uint16 index, uint16 cardinality, , , ) = pool.slot0();
+        uint16 oldestObservationIndex = (index + 1) % cardinality;
+        (uint32 observationTime, , , bool initialized) =
+            pool.observations(oldestObservationIndex);
+        if (!initialized) (observationTime, , , ) = pool.observations(0);
         return observationTime;
     }
 
     /**
-     *  Get asset 1 twap price
-     *  Uses Uni V3 oracle, reading the TWAP from the latest oracle observation time
+     *  Get asset 0 twap
+     *  Uses Uni V3 oracle, reading the TWAP from twap period
+     *  or the earliest oracle observation time if twap period is not set
      */
-    function getAsset1Price() public view returns (int128) {
+    function getAsset0Price() public view returns (int128) {
         uint32[] memory secondsArray = new uint32[](2);
-        // get latest oracle observation time
+        // get earliest oracle observation time
         uint32 observationTime = getObservationTime();
         uint32 currTimestamp = uint32(block.timestamp);
-        uint32 lastObservationSecondsAgo = currTimestamp - observationTime;
-        secondsArray[0] = lastObservationSecondsAgo;
-        secondsArray[1] = 0;
-
-        // If there are no observations return price 1
+        uint32 earliestObservationSecondsAgo = currTimestamp - observationTime;
         if (
-            observationTime >= currTimestamp ||
+            twapPeriod == 0 ||
             !Utils.lte(
                 currTimestamp,
                 observationTime,
-                currTimestamp - lastObservationSecondsAgo
+                currTimestamp - twapPeriod
             )
         ) {
-            return ABDKMath64x64.fromInt(1);
+            // set to earliest observation time if:
+            // a) twap period is 0 (not set)
+            // b) now - twap period is before earliest observation
+            secondsArray[0] = earliestObservationSecondsAgo;
+        } else {
+            secondsArray[0] = twapPeriod;
         }
+        secondsArray[1] = 0;
         (int56[] memory prices, ) = pool.observe(secondsArray);
 
-        int128 twap = Utils.getTWAP(prices, lastObservationSecondsAgo);
-        if (token0Decimals > token1Decimals) {
+        int128 twap = Utils.getTWAP(prices, secondsArray[0]);
+        if (token1Decimals > token0Decimals) {
+            // divide twap by token decimal difference
             twap = ABDKMath64x64.mul(
                 twap,
                 ABDKMath64x64.divu(1, tokenDiffDecimalMultiplier)
             );
-        } else if (token1Decimals > token0Decimals) {
+        } else if (token0Decimals > token1Decimals) {
+            // multiply twap by token decimal difference
             int128 multiplierFixed =
                 ABDKMath64x64.fromUInt(tokenDiffDecimalMultiplier);
             twap = ABDKMath64x64.mul(twap, multiplierFixed);
@@ -976,7 +991,7 @@ contract xU3LPStable is
      * Checks if twap deviates too much from the previous twap
      */
     function checkTwap() private {
-        int128 twap = getAsset1Price();
+        int128 twap = getAsset0Price();
         int128 _lastTwap = lastTwap;
         int128 deviation =
             _lastTwap > twap ? _lastTwap - twap : twap - _lastTwap;
@@ -994,7 +1009,7 @@ contract xU3LPStable is
      *  Requires twap to be above max deviation to execute
      */
     function resetTwap() external onlyOwnerOrManager {
-        lastTwap = getAsset1Price();
+        lastTwap = getAsset0Price();
     }
 
     /**
@@ -1005,6 +1020,14 @@ contract xU3LPStable is
         onlyOwnerOrManager
     {
         maxTwapDeviationDivisor = newDeviationDivisor;
+    }
+
+    /**
+     * Set the oracle reading twap period
+     */
+    function setTwapPeriod(uint32 newPeriod) external onlyOwnerOrManager {
+        require(newPeriod >= 360);
+        twapPeriod = newPeriod;
     }
 
     /**

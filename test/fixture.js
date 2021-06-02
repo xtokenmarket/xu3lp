@@ -8,6 +8,7 @@ const NFTPositionManager =
 require('@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json');
 
 const UniFactory = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json');
+const UniPool = require('@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json');
 
 const deploymentFixture = deployments.createFixture(async () => {
     const signers = await ethers.getSigners();
@@ -47,6 +48,9 @@ const deploymentFixture = deployments.createFixture(async () => {
 
     await positionManager.createAndInitializePoolIfNecessary(token0.address, token1.address, 500, price);
     const poolAddress = await uniFactory.getPool(token0.address, token1.address, 500);
+    const pool = await ethers.getContractAt(UniPool.abi, poolAddress);
+    // increase stored oracle observations to 10
+    await pool.increaseObservationCardinalityNext(10);
     
     const xU3LPImpl = await deploy('xU3LPStable');
     const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
@@ -54,6 +58,7 @@ const deploymentFixture = deployments.createFixture(async () => {
     await xU3LP.initialize("xU3LP", lowTick, highTick, token0.address, token1.address, 
         poolAddress, router.address, positionManager.address, 
         {mintFee: 1250, burnFee: 1250, claimFee: 50}, 200, token0Decimals, token1Decimals);
+    await xU3LP.setTwapPeriod(3600);
     
 
     // approve xU3LP

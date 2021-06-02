@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.7.6;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
@@ -19,8 +20,11 @@ library Utils {
     {
         // Formula is
         // 1.0001 ^ (currentPrice - pastPrice) / secondsAgo
-        int256 currentPrice = int256(prices[0]);
-        int256 pastPrice = int256(prices[1]);
+        if (secondsAgo == 0) {
+            return ABDKMath64x64.fromInt(1);
+        }
+        int256 currentPrice = int256(prices[1]);
+        int256 pastPrice = int256(prices[0]);
 
         int256 diff = currentPrice - pastPrice;
         uint256 priceDiff = diff < 0 ? uint256(-diff) : uint256(diff);
