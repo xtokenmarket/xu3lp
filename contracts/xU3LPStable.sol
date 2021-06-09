@@ -165,19 +165,18 @@ contract xU3LPStable is
         require(amount > 0);
         lock(msg.sender);
         checkTwap();
-        uint256 fee = Utils.calculateFee(amount, feeDivisors.mintFee);
         if (inputAsset == 0) {
             token0.safeTransferFrom(msg.sender, address(this), amount);
+            amount = getAmountInAsset1Terms(amount);
+            uint256 fee = Utils.calculateFee(amount, feeDivisors.mintFee);
             _incrementWithdrawableToken0Fees(fee);
-            _mintInternal(
-                getToken0AmountInWei(getAmountInAsset1Terms(amount).sub(fee))
-            );
+            _mintInternal(getToken0AmountInWei(amount.sub(fee)));
         } else {
             token1.safeTransferFrom(msg.sender, address(this), amount);
+            amount = getAmountInAsset0Terms(amount);
+            uint256 fee = Utils.calculateFee(amount, feeDivisors.mintFee);
             _incrementWithdrawableToken1Fees(fee);
-            _mintInternal(
-                getToken1AmountInWei(getAmountInAsset0Terms(amount).sub(fee))
-            );
+            _mintInternal(getToken1AmountInWei(amount.sub(fee)));
         }
     }
 

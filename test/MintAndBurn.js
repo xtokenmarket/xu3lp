@@ -23,7 +23,7 @@ describe('Contract: xU3LP', async () => {
         let mintFee = feeDivisors.mintFee;
 
         let amountInAsset1Terms = await xU3LP.getAmountInAsset1Terms(amount);
-        let amountWithoutFees = (amountInAsset1Terms.sub(amount.div(mintFee)));
+        let amountWithoutFees = amountInAsset1Terms.sub(amountInAsset1Terms.div(mintFee))
         if(token0Decimals < 18) {
           amountWithoutFees = amountWithoutFees.mul(bn(10).pow(18 - token0Decimals));
         }
@@ -69,7 +69,6 @@ describe('Contract: xU3LP', async () => {
 
         let amount0 = bnDecimals(1000000, token0Decimals);
         let amount1 = bnDecimals(1000000, token1Decimals);
-        let amountInWei = bnDecimal(1000000);
 
         await xU3LP.connect(user).mintWithToken(0, amount0);
         await mineBlocks(5);
@@ -80,13 +79,19 @@ describe('Contract: xU3LP', async () => {
 
         let feeDivisors = await xU3LP.feeDivisors();
         let mintFee = feeDivisors.mintFee;
-        let calculatedFeeAmount = amountInWei.div(mintFee);
+        let calculatedFeeAmount0 = (await xU3LP.getAmountInAsset1Terms(amount0)).div(mintFee);
+        let calculatedFeeAmount1 = (await xU3LP.getAmountInAsset0Terms(amount1)).div(mintFee);
+        if(token0Decimals < 18) {
+          calculatedFeeAmount0 = calculatedFeeAmount0.mul(bn(10).pow(18 - token0Decimals));
+        } else if(token1Decimals < 18) {
+          calculatedFeeAmount1 = calculatedFeeAmount1.mul(bn(10).pow(18 - token1Decimals));
+        }
 
         expect(fees0Before).to.be.lt(fees0After);
         expect(fees1Before).to.be.lt(fees1After);
 
-        expect(fees0Before.add(calculatedFeeAmount)).to.be.eq(fees0After);
-        expect(fees1Before.add(calculatedFeeAmount)).to.be.eq(fees1After);
+        expect(fees0Before.add(calculatedFeeAmount0)).to.be.eq(fees0After);
+        expect(fees1Before.add(calculatedFeeAmount1)).to.be.eq(fees1After);
     }),
 
     it('should burn xu3lp tokens from user when burning', async () => {
