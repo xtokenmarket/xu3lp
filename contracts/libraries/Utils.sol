@@ -23,17 +23,16 @@ library Utils {
         if (secondsAgo == 0) {
             return ABDKMath64x64.fromInt(1);
         }
-        int256 currentPrice = int256(prices[1]);
-        int256 pastPrice = int256(prices[0]);
 
-        int256 diff = currentPrice - pastPrice;
+        int256 diff = int256(prices[1]) - int256(prices[0]);
         uint256 priceDiff = diff < 0 ? uint256(-diff) : uint256(diff);
+        int128 fraction = ABDKMath64x64.divu(priceDiff, uint256(secondsAgo));
 
-        int128 power = ABDKMath64x64.divu(10001, 10000);
-        int128 _fraction = ABDKMath64x64.divu(priceDiff, uint256(secondsAgo));
-        uint256 fraction = uint256(ABDKMath64x64.toUInt(_fraction));
-
-        int128 twap = ABDKMath64x64.pow(power, fraction);
+        int128 twap =
+            ABDKMath64x64.pow(
+                ABDKMath64x64.divu(10001, 10000),
+                uint256(ABDKMath64x64.toUInt(fraction))
+            );
 
         // This is necessary because we cannot call .pow on unsigned integers
         // And thus when asset0Price > asset1Price we need to reverse the value
@@ -71,9 +70,11 @@ library Utils {
 
         // Some numbers are too big to fit in ABDK's div 128-bit representation
         // So calculate the root of the equation and then raise to the 2nd power
-        uint128 subsqrt = ABDKMath64x64.sqrtu(sub);
-        uint128 addsqrt = ABDKMath64x64.sqrtu(add);
-        int128 nRatio = ABDKMath64x64.divu(subsqrt, addsqrt);
+        int128 nRatio =
+            ABDKMath64x64.divu(
+                ABDKMath64x64.sqrtu(sub),
+                ABDKMath64x64.sqrtu(add)
+            );
         int64 n = ABDKMath64x64.toInt(nRatio);
         swapAmount = uint256(n)**2;
     }
