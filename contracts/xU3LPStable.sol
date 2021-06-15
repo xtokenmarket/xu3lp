@@ -790,7 +790,7 @@ contract xU3LPStable is
                 deadline: block.timestamp,
                 amountOut: amountOut,
                 amountInMaximum: amountIn,
-                sqrtPriceLimitX96: priceLower
+                sqrtPriceLimitX96: TickMath.MIN_SQRT_RATIO + 1
             })
         );
     }
@@ -807,7 +807,7 @@ contract xU3LPStable is
                 deadline: block.timestamp,
                 amountOut: amountOut,
                 amountInMaximum: amountIn,
-                sqrtPriceLimitX96: priceUpper
+                sqrtPriceLimitX96: TickMath.MAX_SQRT_RATIO - 1
             })
         );
     }
