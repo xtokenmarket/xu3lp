@@ -244,7 +244,7 @@ contract xU3LPStable is
         return super.transferFrom(sender, recipient, amount);
     }
 
-    // Get net asset value priced in terms of asset0
+    // Get net asset value
     function getNav() public view returns (uint256) {
         return getStakedBalance().add(getBufferBalance());
     }
@@ -275,18 +275,13 @@ contract xU3LPStable is
     // Get total balance in the position
     function getStakedBalance() public view returns (uint256) {
         (uint256 amount0, uint256 amount1) = getStakedTokenBalance();
-        return amount0.add(getAmountInAsset0Terms(amount1));
+        return getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1));
     }
 
     // Get balance in xU3LP contract
     function getBufferBalance() public view returns (uint256) {
         (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
-        return balance0.add(getAmountInAsset0Terms(balance1));
-    }
-
-    // Get wanted xU3LP contract balance - 5% of NAV
-    function getTargetBufferBalance() public view returns (uint256) {
-        return getNav().div(BUFFER_TARGET);
+        return getAmountInAsset1Terms(balance0).add(getAmountInAsset0Terms(balance1));
     }
 
     // Get token balances in xU3LP contract
