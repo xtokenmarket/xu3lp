@@ -83,10 +83,9 @@ contract xU3LPStable is
     uint32 twapPeriod;
 
     event Rebalance();
-    event PositionInitialized(int24 tickLower, int24 tickUpper);
-    event PositionMigrated(int24 tickLower, int24 tickUpper);
     event FeeDivisorsSet(uint256 mintFee, uint256 burnFee, uint256 claimFee);
     event FeeWithdraw(uint256 token0Fee, uint256 token1Fee);
+    event FeeCollected(uint256 token0Fee, uint256 token1Fee);
 
     function initialize(
         string memory _symbol,
@@ -349,7 +348,7 @@ contract xU3LPStable is
     /* ========================================================================================= */
 
     function rebalance() external onlyOwnerOrManager {
-        _collect();
+        collect();
         _rebalance();
         _certifyAdmin();
     }
@@ -409,7 +408,7 @@ contract xU3LPStable is
     }
 
     // Collect fees
-    function _collect() public onlyOwnerOrManager {
+    function collect() public onlyOwnerOrManager {
         (uint256 collected0, uint256 collected1) =
             collectPosition(type(uint128).max, type(uint128).max);
 
@@ -417,6 +416,7 @@ contract xU3LPStable is
         uint256 fee1 = Utils.calculateFee(collected1, feeDivisors.claimFee);
         _incrementWithdrawableToken0Fees(fee0);
         _incrementWithdrawableToken1Fees(fee1);
+        emit FeeCollected(collected0, collected1);
     }
 
     /**
@@ -481,7 +481,6 @@ contract xU3LPStable is
         // mint the position NFT and deposit the liquidity
         // set new NFT token id
         tokenId = createPosition(amount0, amount1);
-        emit PositionMigrated(newTickLower, newTickUpper);
     }
 
     // Withdraws all current liquidity from the position
@@ -490,7 +489,7 @@ contract xU3LPStable is
         returns (uint256 _amount0, uint256 _amount1)
     {
         // Collect fees
-        _collect();
+        collect();
         (_amount0, _amount1) = unstakePosition(getPositionLiquidity());
         collectPosition(uint128(_amount0), uint128(_amount1));
     }
@@ -557,7 +556,6 @@ contract xU3LPStable is
         _mintInternal(
             getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1))
         );
-        emit PositionInitialized(tickLower, tickUpper);
     }
 
     /**
