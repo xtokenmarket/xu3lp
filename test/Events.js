@@ -30,20 +30,12 @@ describe('Contract: xU3LP', async () => {
               .to.emit(xU3LP, 'Rebalance')
     }),
 
-    it('should emit event on position initialization', async () => {
-      let mintAmount = bnDecimals(100000000, token0Decimals);
-      let mintAmount2 = bnDecimals(100000000, token1Decimals);
-        await expect(xU3LP.mintInitial(mintAmount, mintAmount2))
-              .to.emit(xU3LP, 'PositionInitialized')
-    }),
-
-    it('should emit event on position migration', async () => {
+    it('should emit event on fee collection', async () => {
       let mintAmount = bnDecimals(100000000, token0Decimals);
       let mintAmount2 = bnDecimals(100000000, token1Decimals);
       await xU3LP.mintInitial(mintAmount, mintAmount2);
-      let ticks = await xU3LP.getTicks();
-        await expect(xU3LP.migratePosition(ticks.tick0 - 20, ticks.tick1 + 20))
-              .to.emit(xU3LP, 'PositionMigrated')
+        await expect(xU3LP.collect())
+              .to.emit(xU3LP, 'FeeCollected')
     })
   })
 })
