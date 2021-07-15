@@ -1,4 +1,6 @@
 const { ethers, network } = require("hardhat");
+const tokenAddresses = require('./tokenAddresses.json');
+const { getPool } = require('./uniswapHelpers');
 
 
 /**
@@ -23,6 +25,55 @@ async function deployArgs(contractName, ...args) {
  async function deployWithAbi(contract, deployer, ...args) {
     let Factory = new ethers.ContractFactory(contract.abi, contract.bytecode, deployer);
     return await Factory.deploy(...args);
+}
+
+/**
+ * Deploy a contract by name without constructor arguments
+ * Link contract to a library address
+ */
+ async function deployAndLink(contractName, libraryName, libraryAddress) {
+    const params = {
+        libraries: {
+            [libraryName]: libraryAddress
+        }
+    }
+    let Contract = await ethers.getContractFactory(contractName, params);
+    return await Contract.deploy();
+}
+
+/**
+ * Gets all the token contracts in one object
+ * @returns map of token name to Contract
+ */
+async function getTokens() {
+    let tokens = 
+    {
+        DAI: await ethers.getContractAt('DAI', tokenAddresses.DAI),
+        UST: await ethers.getContractAt('UST', tokenAddresses.UST),
+        USDC: await ethers.getContractAt('USDC', tokenAddresses.USDC),
+        USDT: await ethers.getContractAt('USDT', tokenAddresses.USDT),
+        sUSD: await ethers.getContractAt('sUSD', tokenAddresses.SUSD),
+        sETH: await ethers.getContractAt('sETH', tokenAddresses.SETH),
+        WETH: await ethers.getContractAt('WETH', tokenAddresses.WETH),
+        FRAX: await ethers.getContractAt('FRAX', tokenAddresses.FRAX),
+        BUSD: await ethers.getContractAt('BUSD', tokenAddresses.BUSD),
+        WBTC: await ethers.getContractAt('WBTC', tokenAddresses.WBTC),
+        RENBTC: await ethers.getContractAt('RENBTC', tokenAddresses.RENBTC),
+    }
+    return tokens;
+}
+
+async function getPoolAddresses() {
+    let pools = {
+        DAI_USDC: await getPool(tokenAddresses.DAI, tokenAddresses.USDC),
+        USDC_USDT: await getPool(tokenAddresses.USDC, tokenAddresses.USDT),
+        SUSD_USDC: await getPool(tokenAddresses.SUSD, tokenAddresses.USDC),
+        SETH_WETH: await getPool(tokenAddresses.SETH, tokenAddresses.WETH),
+        WBTC_RENBTC: await getPool(tokenAddresses.WBTC, tokenAddresses.RENBTC),
+        UST_USDT: await getPool(tokenAddresses.UST, tokenAddresses.USDT),
+        FRAX_USDC: await getPool(tokenAddresses.FRAX, tokenAddresses.USDC),
+        BUSD_USDT: await getPool(tokenAddresses.BUSD, tokenAddresses.USDT)
+    }
 }
 
 /**
@@ -119,8 +170,8 @@ async function getRatio(xU3LP) {
  */
 async function getTokenPrices(xU3LP) {
     // Increase time by 1 hour = 3600 seconds to get previous price
-    await network.provider.send("evm_increaseTime", [300]);
-    await network.provider.send("evm_mine");
+    // await network.provider.send("evm_increaseTime", [300]);
+    // await network.provider.send("evm_mine");
     // Get asset 0 price
     let asset0Price = await xU3LP.getAsset0Price();
     console.log('asset 0 price:', asset0Price.toString());
@@ -351,10 +402,10 @@ function getNumberNoDecimals(amount) {
 }
 
 module.exports = {
-    deploy, deployArgs, deployWithAbi, getBalance, getTWAP, getPriceInX96Format, getRatio, getTokenPrices,
-    getXU3LPBalance, getPositionBalance, getBufferBalance, printPositionAndBufferBalance,
+    deploy, deployArgs, deployWithAbi, deployAndLink, getBalance, getTWAP, getPriceInX96Format, 
+    getRatio, getTokenPrices, getXU3LPBalance, getPositionBalance, getBufferBalance,
     bn, bnDecimal, bnDecimals, getNumberNoDecimals, getNumberDivDecimals, 
     getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0, 
-    swapToken0ForToken1Decimals, swapToken1ForToken0Decimals,
-    increaseTime, mineBlocks, getBufferPositionRatio
+    swapToken0ForToken1Decimals, swapToken1ForToken0Decimals, printPositionAndBufferBalance,
+    increaseTime, mineBlocks, getBufferPositionRatio, getPoolAddresses, getTokens
 }

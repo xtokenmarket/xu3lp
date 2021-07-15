@@ -11,15 +11,9 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
-
-import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
-import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
-
 import "./libraries/ABDKMath64x64.sol";
 import "./libraries/Utils.sol";
+import "./libraries/UniswapLibrary.sol";
 import "./BlockLock.sol";
 
 contract xU3LPStable is
@@ -55,9 +49,9 @@ contract xU3LPStable is
     IERC20 token0;
     IERC20 token1;
 
-    IUniswapV3Pool pool;
-    ISwapRouter router;
-    INonfungiblePositionManager positionManager;
+    address public poolAddress;
+    address public routerAddress;
+    address public positionManagerAddress;
 
     uint256 public adminActiveTimestamp;
     uint256 public withdrawableToken0Fees;
@@ -93,9 +87,9 @@ contract xU3LPStable is
         int24 _tickUpper,
         IERC20 _token0,
         IERC20 _token1,
-        IUniswapV3Pool _pool,
-        ISwapRouter _router,
-        INonfungiblePositionManager _positionManager,
+        address _pool,
+        address _router,
+        address _positionManager,
         FeeDivisors memory _feeDivisors,
         uint256 _maxTwapDeviationDivisor,
         uint8 _token0Decimals,
@@ -108,8 +102,8 @@ contract xU3LPStable is
 
         tickLower = _tickLower;
         tickUpper = _tickUpper;
-        priceLower = TickMath.getSqrtRatioAtTick(_tickLower);
-        priceUpper = TickMath.getSqrtRatioAtTick(_tickUpper);
+        priceLower = UniswapLibrary.getSqrtRatio(_tickLower);
+        priceUpper = UniswapLibrary.getSqrtRatio(_tickUpper);
         if (_token0 > _token1) {
             token0 = _token1;
             token1 = _token0;
@@ -130,20 +124,14 @@ contract xU3LPStable is
 
         maxTwapDeviationDivisor = _maxTwapDeviationDivisor;
 
-        pool = _pool;
-        router = _router;
-        positionManager = _positionManager;
+        poolAddress = _pool;
+        routerAddress = _router;
+        positionManagerAddress = _positionManager;
 
-        token0.safeIncreaseAllowance(address(router), type(uint256).max);
-        token1.safeIncreaseAllowance(address(router), type(uint256).max);
-        token0.safeIncreaseAllowance(
-            address(positionManager),
-            type(uint256).max
-        );
-        token1.safeIncreaseAllowance(
-            address(positionManager),
-            type(uint256).max
-        );
+        token0.safeIncreaseAllowance(_router, type(uint256).max);
+        token1.safeIncreaseAllowance(_router, type(uint256).max);
+        token0.safeIncreaseAllowance(_positionManager, type(uint256).max);
+        token1.safeIncreaseAllowance(_positionManager, type(uint256).max);
 
         lastTwap = getAsset0Price();
         _setFeeDivisors(_feeDivisors);
@@ -243,44 +231,99 @@ contract xU3LPStable is
         return super.transferFrom(sender, recipient, amount);
     }
 
-    // Get net asset value
-    function getNav() public view returns (uint256) {
-        return getStakedBalance().add(getBufferBalance());
+    /**
+     *  @dev Get asset 0 twap
+     *  @dev Uses Uni V3 oracle, reading the TWAP from twap period
+     *  @dev or the earliest oracle observation time if twap period is not set
+     */
+    function getAsset0Price() public view returns (int128) {
+        return
+            UniswapLibrary.getAsset0Price(
+                poolAddress,
+                twapPeriod,
+                token0Decimals,
+                token1Decimals,
+                tokenDiffDecimalMultiplier
+            );
     }
 
-    // Get asset 1 twap
+    /**
+     *  @dev Get asset 1 twap
+     *  @dev Uses Uni V3 oracle, reading the TWAP from twap period
+     *  @dev or the earliest oracle observation time if twap period is not set
+     */
     function getAsset1Price() public view returns (int128) {
-        return ABDKMath64x64.inv(getAsset0Price());
+        return
+            UniswapLibrary.getAsset1Price(
+                poolAddress,
+                twapPeriod,
+                token0Decimals,
+                token1Decimals,
+                tokenDiffDecimalMultiplier
+            );
     }
 
-    // Returns amount in terms of asset0
+    /**
+     * @dev Returns amount in terms of asset 0
+     * @dev amount * asset 1 price
+     */
     function getAmountInAsset0Terms(uint256 amount)
         public
         view
         returns (uint256)
     {
-        return ABDKMath64x64.mulu(getAsset1Price(), amount);
+        return
+            UniswapLibrary.getAmountInAsset0Terms(
+                amount,
+                poolAddress,
+                twapPeriod,
+                token0Decimals,
+                token1Decimals,
+                tokenDiffDecimalMultiplier
+            );
     }
 
-    // Returns amount in terms of asset1
+    /**
+     * @dev Returns amount in terms of asset 1
+     * @dev amount * asset 0 price
+     */
     function getAmountInAsset1Terms(uint256 amount)
         public
         view
         returns (uint256)
     {
-        return ABDKMath64x64.mulu(getAsset0Price(), amount);
+        return
+            UniswapLibrary.getAmountInAsset1Terms(
+                amount,
+                poolAddress,
+                twapPeriod,
+                token0Decimals,
+                token1Decimals,
+                tokenDiffDecimalMultiplier
+            );
+    }
+
+    // Get net asset value
+    function getNav() public view returns (uint256) {
+        return getStakedBalance().add(getBufferBalance());
     }
 
     // Get total balance in the position
     function getStakedBalance() public view returns (uint256) {
         (uint256 amount0, uint256 amount1) = getStakedTokenBalance();
-        return getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1));
+        return
+            getAmountInAsset1Terms(amount0).add(
+                getAmountInAsset0Terms(amount1)
+            );
     }
 
     // Get balance in xU3LP contract
     function getBufferBalance() public view returns (uint256) {
         (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
-        return getAmountInAsset1Terms(balance0).add(getAmountInAsset0Terms(balance1));
+        return
+            getAmountInAsset1Terms(balance0).add(
+                getAmountInAsset0Terms(balance1)
+            );
     }
 
     // Get token balances in xU3LP contract
@@ -388,23 +431,32 @@ contract xU3LPStable is
         }
     }
 
-    function _stake(uint256 amount0, uint256 amount1) private {
-        positionManager.increaseLiquidity(
-            INonfungiblePositionManager.IncreaseLiquidityParams({
-                tokenId: tokenId,
-                amount0Desired: amount0,
-                amount1Desired: amount1,
-                amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                deadline: block.timestamp
-            })
-        );
+    /**
+     * @dev Stake liquidity in position
+     */
+    function _stake(uint256 amount0, uint256 amount1)
+        private
+        returns (uint256 stakedAmount0, uint256 stakedAmount1)
+    {
+        return
+            UniswapLibrary.stake(
+                amount0,
+                amount1,
+                positionManagerAddress,
+                tokenId
+            );
     }
 
-    function _unstake(uint256 amount0, uint256 amount1) private {
+    /**
+     * @dev Unstake liquidity from position
+     */
+    function _unstake(uint256 amount0, uint256 amount1)
+        private
+        returns (uint256 collected0, uint256 collected1)
+    {
         uint128 liquidityAmount = getLiquidityForAmounts(amount0, amount1);
         (uint256 _amount0, uint256 _amount1) = unstakePosition(liquidityAmount);
-        collectPosition(uint128(_amount0), uint128(_amount1));
+        return collectPosition(uint128(_amount0), uint128(_amount1));
     }
 
     // Collect fees
@@ -420,40 +472,41 @@ contract xU3LPStable is
     }
 
     /**
-     * Check if token amounts match before attempting mint() or burn()
-     * Uniswap contract requires deposits at a precise token ratio
-     * If they don't match, swap the tokens so as to deposit as much as possible
+     * @dev Check if token amounts match before attempting rebalance
+     * @dev Uniswap contract requires deposits at a precise token ratio
+     * @dev If they don't match, swap the tokens so as to deposit as much as possible
      */
     function checkIfAmountsMatchAndSwap(
         uint256 amount0ToMint,
         uint256 amount1ToMint
     ) private returns (uint256 amount0, uint256 amount1) {
-        (uint256 amount0Minted, uint256 amount1Minted) =
-            calculatePoolMintedAmounts(amount0ToMint, amount1ToMint);
-        if (
-            amount0Minted <
-            amount0ToMint.sub(amount0ToMint.div(MINT_BURN_SLIPPAGE)) ||
-            amount1Minted <
-            amount1ToMint.sub(amount1ToMint.div(MINT_BURN_SLIPPAGE))
-        ) {
-            // calculate liquidity ratio
-            uint256 mintLiquidity =
-                getLiquidityForAmounts(amount0ToMint, amount1ToMint);
-            uint256 poolLiquidity = getPoolLiquidity();
-            int128 liquidityRatio =
-                poolLiquidity == 0
-                    ? 0
-                    : int128(ABDKMath64x64.divuu(mintLiquidity, poolLiquidity));
-            (amount0, amount1) = restoreTokenRatios(
+        UniswapLibrary.TokenDetails memory tokenDetails =
+            UniswapLibrary.TokenDetails({
+                token0: address(token0),
+                token1: address(token1),
+                token0DecimalMultiplier: token0DecimalMultiplier,
+                token1DecimalMultiplier: token1DecimalMultiplier,
+                token0Decimals: token0Decimals,
+                token1Decimals: token1Decimals
+            });
+        UniswapLibrary.PositionDetails memory positionDetails =
+            UniswapLibrary.PositionDetails({
+                poolFee: POOL_FEE,
+                priceLower: priceLower,
+                priceUpper: priceUpper,
+                tokenId: tokenId,
+                positionManager: positionManagerAddress,
+                router: routerAddress,
+                pool: poolAddress
+            });
+        return
+            UniswapLibrary.checkIfAmountsMatchAndSwap(
+                true,
                 amount0ToMint,
                 amount1ToMint,
-                amount0Minted,
-                amount1Minted,
-                liquidityRatio
+                positionDetails,
+                tokenDetails
             );
-        } else {
-            (amount0, amount1) = (amount0ToMint, amount1ToMint);
-        }
     }
 
     // Migrate the current position to a new position with different ticks
@@ -466,13 +519,13 @@ contract xU3LPStable is
         // withdraw entire liquidity from the position
         (uint256 _amount0, uint256 _amount1) = withdrawAll();
         // burn current position NFT
-        positionManager.burn(tokenId);
+        UniswapLibrary.burn(positionManagerAddress, tokenId);
         tokenId = 0;
         // set new ticks and prices
         tickLower = newTickLower;
         tickUpper = newTickUpper;
-        priceLower = TickMath.getSqrtRatioAtTick(newTickLower);
-        priceUpper = TickMath.getSqrtRatioAtTick(newTickUpper);
+        priceLower = UniswapLibrary.getSqrtRatio(newTickLower);
+        priceUpper = UniswapLibrary.getSqrtRatio(newTickUpper);
 
         // if amounts don't add up when minting, swap tokens
         (uint256 amount0, uint256 amount1) =
@@ -559,27 +612,40 @@ contract xU3LPStable is
     }
 
     /**
-     * Creates the NFT token representing the pool position
+     * @dev Creates the NFT token representing the pool position
+     * @dev Mint initial liquidity
      */
     function createPosition(uint256 amount0, uint256 amount1)
         private
         returns (uint256 _tokenId)
     {
-        (_tokenId, , , ) = positionManager.mint(
-            INonfungiblePositionManager.MintParams({
+        UniswapLibrary.TokenDetails memory tokenDetails =
+            UniswapLibrary.TokenDetails({
                 token0: address(token0),
                 token1: address(token1),
-                fee: POOL_FEE,
-                tickLower: tickLower,
-                tickUpper: tickUpper,
-                amount0Desired: amount0,
-                amount1Desired: amount1,
-                amount0Min: amount0.sub(amount0.div(MINT_BURN_SLIPPAGE)),
-                amount1Min: amount1.sub(amount1.div(MINT_BURN_SLIPPAGE)),
-                recipient: address(this),
-                deadline: block.timestamp
-            })
-        );
+                token0DecimalMultiplier: token0DecimalMultiplier,
+                token1DecimalMultiplier: token1DecimalMultiplier,
+                token0Decimals: token0Decimals,
+                token1Decimals: token1Decimals
+            });
+        UniswapLibrary.PositionDetails memory positionDetails =
+            UniswapLibrary.PositionDetails({
+                poolFee: POOL_FEE,
+                priceLower: priceLower,
+                priceUpper: priceUpper,
+                tokenId: tokenId,
+                positionManager: positionManagerAddress,
+                router: routerAddress,
+                pool: poolAddress
+            });
+        return
+            UniswapLibrary.createPosition(
+                amount0,
+                amount1,
+                positionManagerAddress,
+                tokenDetails,
+                positionDetails
+            );
     }
 
     /**
@@ -592,17 +658,17 @@ contract xU3LPStable is
         private
         returns (uint256 amount0, uint256 amount1)
     {
-        (uint256 _amount0, uint256 _amount1) =
-            getAmountsForLiquidity(liquidity);
-        (amount0, amount1) = positionManager.decreaseLiquidity(
-            INonfungiblePositionManager.DecreaseLiquidityParams({
+        UniswapLibrary.PositionDetails memory positionDetails =
+            UniswapLibrary.PositionDetails({
+                poolFee: POOL_FEE,
+                priceLower: priceLower,
+                priceUpper: priceUpper,
                 tokenId: tokenId,
-                liquidity: liquidity,
-                amount0Min: _amount0.sub(_amount0.div(MINT_BURN_SLIPPAGE)),
-                amount1Min: _amount1.sub(_amount1.div(MINT_BURN_SLIPPAGE)),
-                deadline: block.timestamp
-            })
-        );
+                positionManager: positionManagerAddress,
+                router: routerAddress,
+                pool: poolAddress
+            });
+        return UniswapLibrary.unstakePosition(liquidity, positionDetails);
     }
 
     /*
@@ -772,228 +838,71 @@ contract xU3LPStable is
     /* ========================================================================================= */
 
     function swapToken0ForToken1(uint256 amountIn, uint256 amountOut) private {
-        amountIn = getToken0AmountInNativeDecimals(amountIn);
-        amountOut = getToken1AmountInNativeDecimals(amountOut);
-        router.exactOutputSingle(
-            ISwapRouter.ExactOutputSingleParams({
-                tokenIn: address(token0),
-                tokenOut: address(token1),
-                fee: POOL_FEE,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountOut: amountOut,
-                amountInMaximum: amountIn,
-                sqrtPriceLimitX96: TickMath.MIN_SQRT_RATIO + 1
+        UniswapLibrary.swapToken0ForToken1(
+            amountIn,
+            amountOut,
+            POOL_FEE,
+            routerAddress,
+            UniswapLibrary.TokenDetails({
+                token0: address(token0),
+                token1: address(token1),
+                token0DecimalMultiplier: token0DecimalMultiplier,
+                token1DecimalMultiplier: token1DecimalMultiplier,
+                token0Decimals: token0Decimals,
+                token1Decimals: token1Decimals
             })
         );
     }
 
     function swapToken1ForToken0(uint256 amountIn, uint256 amountOut) private {
-        amountIn = getToken1AmountInNativeDecimals(amountIn);
-        amountOut = getToken0AmountInNativeDecimals(amountOut);
-        router.exactOutputSingle(
-            ISwapRouter.ExactOutputSingleParams({
-                tokenIn: address(token1),
-                tokenOut: address(token0),
-                fee: POOL_FEE,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountOut: amountOut,
-                amountInMaximum: amountIn,
-                sqrtPriceLimitX96: TickMath.MAX_SQRT_RATIO - 1
+        UniswapLibrary.swapToken1ForToken0(
+            amountIn,
+            amountOut,
+            POOL_FEE,
+            routerAddress,
+            UniswapLibrary.TokenDetails({
+                token0: address(token0),
+                token1: address(token1),
+                token0DecimalMultiplier: token0DecimalMultiplier,
+                token1DecimalMultiplier: token1DecimalMultiplier,
+                token0Decimals: token0Decimals,
+                token1Decimals: token1Decimals
             })
         );
     }
 
-    /**
-     * Swap tokens in xU3LP so as to keep a ratio which is required for
-     * depositing/withdrawing liquidity from the pool
-     */
-    function restoreTokenRatios(
-        uint256 amount0ToMint,
-        uint256 amount1ToMint,
-        uint256 amount0Minted,
-        uint256 amount1Minted,
-        int128 liquidityRatio
-    ) private returns (uint256 amount0, uint256 amount1) {
-        // after normalization, returned swap amount will be in wei representation
-        uint256 swapAmount =
-            Utils.calculateSwapAmount(
-                getToken0AmountInWei(amount0ToMint),
-                getToken1AmountInWei(amount1ToMint),
-                getToken0AmountInWei(amount0Minted),
-                getToken1AmountInWei(amount1Minted),
-                liquidityRatio
-            );
-        if (swapAmount == 0) {
-            return (amount0ToMint, amount1ToMint);
-        }
-        uint256 swapAmountWithSlippage =
-            swapAmount.add(swapAmount.div(SWAP_SLIPPAGE));
-
-        uint256 mul1 = amount0ToMint.mul(amount1Minted);
-        uint256 mul2 = amount1ToMint.mul(amount0Minted);
-        (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
-
-        if (mul1 > mul2) {
-            if (balance0 < swapAmountWithSlippage) {
-                // withdraw enough balance to swap
-                withdrawSingleToken(true, swapAmountWithSlippage);
-                // balances are not the same as before, so go back to rebalancing
-                _provideOrRemoveLiquidity();
-                return (0, 0);
-            }
-            // Swap tokens
-            swapToken0ForToken1(swapAmountWithSlippage, swapAmount);
-            amount0 = amount0ToMint.sub(
-                getToken0AmountInNativeDecimals(swapAmount)
-            );
-            amount1 = amount1ToMint.add(
-                getToken1AmountInNativeDecimals(swapAmount)
-            );
-        } else if (mul1 < mul2) {
-            if (balance1 < swapAmountWithSlippage) {
-                // withdraw enough balance to swap
-                withdrawSingleToken(false, swapAmountWithSlippage);
-                // balances are not the same as before, so go back to rebalancing
-                _provideOrRemoveLiquidity();
-                return (0, 0);
-            }
-            // Swap tokens
-            swapToken1ForToken0(swapAmountWithSlippage, swapAmount);
-            amount0 = amount0ToMint.add(
-                getToken0AmountInNativeDecimals(swapAmount)
-            );
-            amount1 = amount1ToMint.sub(
-                getToken1AmountInNativeDecimals(swapAmount)
-            );
-        }
-    }
-
-    /**
-     *  @dev Withdraw until token0 or token1 balance reaches amount
-     *  @param forToken0 withdraw balance for token0 (true) or token1 (false)
-     *  @param amount minimum amount we want to have in token0 or token1
-     */
-    function withdrawSingleToken(bool forToken0, uint256 amount) private {
-        uint256 balance;
-        uint256 unstakeAmount0;
-        uint256 unstakeAmount1;
-        uint256 swapAmount;
-        do {
-            // calculate how much we can withdraw
-            (unstakeAmount0, unstakeAmount1) = calculatePoolMintedAmounts(
-                getToken0AmountInNativeDecimals(amount),
-                getToken1AmountInNativeDecimals(amount)
-            );
-            // withdraw both tokens
-            _unstake(unstakeAmount0, unstakeAmount1);
-
-            // swap the excess amount of token0 for token1 or vice-versa
-            swapAmount = forToken0
-                ? getToken1AmountInWei(unstakeAmount1)
-                : getToken0AmountInWei(unstakeAmount0);
-            forToken0
-                ? swapToken1ForToken0(
-                    swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
-                    swapAmount
-                )
-                : swapToken0ForToken1(
-                    swapAmount.add(swapAmount.div(SWAP_SLIPPAGE)),
-                    swapAmount
-                );
-            balance = forToken0
-                ? getBufferToken0Balance()
-                : getBufferToken1Balance();
-        } while (balance < amount);
-    }
-
     // Returns the current liquidity in the position
-    function getPositionLiquidity() private view returns (uint128 liquidity) {
-        (, , , , , , , liquidity, , , , ) = positionManager.positions(tokenId);
+    function getPositionLiquidity() public view returns (uint128 liquidity) {
+        return
+            UniswapLibrary.getPositionLiquidity(
+                positionManagerAddress,
+                tokenId
+            );
     }
 
     // Returns the current pool price
     function getPoolPrice() private view returns (uint160) {
-        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
-        return sqrtRatioX96;
+        return UniswapLibrary.getPoolPrice(poolAddress);
     }
 
     // Returns the current pool liquidity
     function getPoolLiquidity() private view returns (uint128) {
-        return pool.liquidity();
-    }
-
-    // Returns the earliest oracle observation time
-    function getObservationTime() public view returns (uint32) {
-        (, , uint16 index, uint16 cardinality, , , ) = pool.slot0();
-        uint16 oldestObservationIndex = (index + 1) % cardinality;
-        (uint32 observationTime, , , bool initialized) =
-            pool.observations(oldestObservationIndex);
-        if (!initialized) (observationTime, , , ) = pool.observations(0);
-        return observationTime;
+        return UniswapLibrary.getPoolLiquidity(poolAddress);
     }
 
     /**
-     *  Get asset 0 twap
-     *  Uses Uni V3 oracle, reading the TWAP from twap period
-     *  or the earliest oracle observation time if twap period is not set
-     */
-    function getAsset0Price() public view returns (int128) {
-        uint32[] memory secondsArray = new uint32[](2);
-        // get earliest oracle observation time
-        uint32 observationTime = getObservationTime();
-        uint32 currTimestamp = uint32(block.timestamp);
-        uint32 earliestObservationSecondsAgo = currTimestamp - observationTime;
-        if (
-            twapPeriod == 0 ||
-            !Utils.lte(
-                currTimestamp,
-                observationTime,
-                currTimestamp - twapPeriod
-            )
-        ) {
-            // set to earliest observation time if:
-            // a) twap period is 0 (not set)
-            // b) now - twap period is before earliest observation
-            secondsArray[0] = earliestObservationSecondsAgo;
-        } else {
-            secondsArray[0] = twapPeriod;
-        }
-        secondsArray[1] = 0;
-        (int56[] memory prices, ) = pool.observe(secondsArray);
-
-        int128 twap = Utils.getTWAP(prices, secondsArray[0]);
-        if (token1Decimals > token0Decimals) {
-            // divide twap by token decimal difference
-            twap = ABDKMath64x64.mul(
-                twap,
-                ABDKMath64x64.divu(1, tokenDiffDecimalMultiplier)
-            );
-        } else if (token0Decimals > token1Decimals) {
-            // multiply twap by token decimal difference
-            int128 multiplierFixed =
-                ABDKMath64x64.fromUInt(tokenDiffDecimalMultiplier);
-            twap = ABDKMath64x64.mul(twap, multiplierFixed);
-        }
-        return twap;
-    }
-
-    /**
-     * Checks if twap deviates too much from the previous twap
+     * @dev Checks if twap deviates too much from the previous twap
      */
     function checkTwap() private {
-        int128 twap = getAsset0Price();
-        int128 _lastTwap = lastTwap;
-        int128 deviation =
-            _lastTwap > twap ? _lastTwap - twap : twap - _lastTwap;
-        int128 maxDeviation =
-            ABDKMath64x64.mul(
-                twap,
-                ABDKMath64x64.divu(1, maxTwapDeviationDivisor)
-            );
-        require(deviation <= maxDeviation, "Wrong twap");
-        lastTwap = twap;
+        lastTwap = UniswapLibrary.checkTwap(
+            poolAddress,
+            twapPeriod,
+            token0Decimals,
+            token1Decimals,
+            tokenDiffDecimalMultiplier,
+            lastTwap,
+            maxTwapDeviationDivisor
+        );
     }
 
     /**
@@ -1023,20 +932,19 @@ contract xU3LPStable is
     }
 
     /**
-     *  Collect token amounts from pool position
+     *  @dev Collect token amounts from pool position
      */
     function collectPosition(uint128 amount0, uint128 amount1)
         private
         returns (uint256 collected0, uint256 collected1)
     {
-        (collected0, collected1) = positionManager.collect(
-            INonfungiblePositionManager.CollectParams({
-                tokenId: tokenId,
-                recipient: address(this),
-                amount0Max: amount0,
-                amount1Max: amount1
-            })
-        );
+        return
+            UniswapLibrary.collectPosition(
+                amount0,
+                amount1,
+                tokenId,
+                positionManagerAddress
+            );
     }
 
     /**
@@ -1056,29 +964,29 @@ contract xU3LPStable is
     }
 
     function getAmountsForLiquidity(uint128 liquidity)
-        private
+        public
         view
         returns (uint256 amount0, uint256 amount1)
     {
-        (amount0, amount1) = LiquidityAmounts.getAmountsForLiquidity(
-            getPoolPrice(),
+        (amount0, amount1) = UniswapLibrary.getAmountsForLiquidity(
+            liquidity,
             priceLower,
             priceUpper,
-            liquidity
+            poolAddress
         );
     }
 
     function getLiquidityForAmounts(uint256 amount0, uint256 amount1)
-        private
+        public
         view
         returns (uint128 liquidity)
     {
-        liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            getPoolPrice(),
+        liquidity = UniswapLibrary.getLiquidityForAmounts(
+            amount0,
+            amount1,
             priceLower,
             priceUpper,
-            amount0,
-            amount1
+            poolAddress
         );
     }
 
@@ -1097,10 +1005,12 @@ contract xU3LPStable is
         view
         returns (uint256)
     {
-        if (token0Decimals < TOKEN_DECIMAL_REPRESENTATION) {
-            amount = amount.mul(token0DecimalMultiplier);
-        }
-        return amount;
+        return
+            UniswapLibrary.getToken0AmountInWei(
+                amount,
+                token0Decimals,
+                token0DecimalMultiplier
+            );
     }
 
     /**
@@ -1111,10 +1021,12 @@ contract xU3LPStable is
         view
         returns (uint256)
     {
-        if (token1Decimals < TOKEN_DECIMAL_REPRESENTATION) {
-            amount = amount.mul(token1DecimalMultiplier);
-        }
-        return amount;
+        return
+            UniswapLibrary.getToken1AmountInWei(
+                amount,
+                token1Decimals,
+                token1DecimalMultiplier
+            );
     }
 
     /**
@@ -1125,10 +1037,12 @@ contract xU3LPStable is
         view
         returns (uint256)
     {
-        if (token0Decimals < TOKEN_DECIMAL_REPRESENTATION) {
-            amount = amount.div(token0DecimalMultiplier);
-        }
-        return amount;
+        return
+            UniswapLibrary.getToken0AmountInNativeDecimals(
+                amount,
+                token0Decimals,
+                token0DecimalMultiplier
+            );
     }
 
     /**
@@ -1139,9 +1053,11 @@ contract xU3LPStable is
         view
         returns (uint256)
     {
-        if (token1Decimals < TOKEN_DECIMAL_REPRESENTATION) {
-            amount = amount.div(token1DecimalMultiplier);
-        }
-        return amount;
+        return
+            UniswapLibrary.getToken1AmountInNativeDecimals(
+                amount,
+                token1Decimals,
+                token1DecimalMultiplier
+            );
     }
 }

@@ -1,5 +1,5 @@
 const { ethers } = require('hardhat');
-const { deploy, printPositionAndBufferBalance, 
+const { deploy, deployAndLink, printPositionAndBufferBalance, 
   bnDecimal, bnDecimals, getTokenPrices, mineBlocks } = require('../../../helpers');
 require('dotenv').config();
 const tokenAddresses = require('../../../tokenAddresses.json');
@@ -52,7 +52,8 @@ async function deployForked() {
     await admin.sendTransaction(ethSendTx);
 
     // Deploy xU3LP
-    const xU3LPImpl = await deploy('xU3LPStable');
+    const uniLib = await deploy('UniswapLibrary');
+    const xU3LPImpl = await deployAndLink('xU3LPStable', 'UniswapLibrary', uniLib.address);
     await xU3LPImpl.deployed();
     let proxyAddress = '0xDa4d2152B2230e33c80b0A88b7C28b1C464EE3c2'
     let xU3LP = await ethers.getContractAt('xU3LPStable', proxyAddress);
