@@ -1,5 +1,5 @@
 const { ethers } = require('hardhat');
-const { deploy, deployArgs, bnDecimal, bnDecimals, deployWithAbi, getPriceInX96Format } = require('../scripts/helpers');
+const { deploy, deployArgs, bnDecimal, bnDecimals, deployWithAbi, getPriceInX96Format, deployAndLink } = require('../scripts/helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =
@@ -51,8 +51,11 @@ const deploymentFixture = deployments.createFixture(async () => {
     const pool = await ethers.getContractAt(UniPool.abi, poolAddress);
     // increase stored oracle observations to 10
     await pool.increaseObservationCardinalityNext(10);
+
+    // deploy Uniswap Library
+    const uniLibrary = await deploy('UniswapLibrary');
     
-    const xU3LPImpl = await deploy('xU3LPStable');
+    const xU3LPImpl = await deployAndLink('xU3LPStable', 'UniswapLibrary', uniLibrary.address);
     const xU3LPProxy = await deployArgs('xU3LPStableProxy', xU3LPImpl.address, proxyAdmin.address);
     const xU3LP = await ethers.getContractAt('xU3LPStable', xU3LPProxy.address);
     await xU3LP.initialize("xU3LP", lowTick, highTick, token0.address, token1.address, 
