@@ -178,40 +178,44 @@ contract xU3LPStable is
         require(amount > 0);
         lock(msg.sender);
         checkTwap();
-        uint256 bufferBalance = getBufferBalance();
-        uint256 totalBalance = bufferBalance.add(getStakedBalance());
+        (uint256 bufferToken0Balance, uint256 bufferToken1Balance) =
+            getBufferTokenBalance();
+        uint256 nav = getNav();
 
         uint256 proRataBalance;
         if (outputAsset == 0) {
-            proRataBalance = (totalBalance.mul(getAmountInAsset0Terms(amount)))
-                .div(totalSupply());
+            proRataBalance = (nav.mul(getAmountInAsset0Terms(amount))).div(
+                totalSupply()
+            );
+            require(
+                proRataBalance <= bufferToken0Balance,
+                "Insufficient exit liquidity"
+            );
         } else {
             proRataBalance = (
-                totalBalance.mul(getAmountInAsset1Terms(amount)).div(
-                    totalSupply()
-                )
+                nav.mul(getAmountInAsset1Terms(amount)).div(totalSupply())
+            );
+            require(
+                proRataBalance <= bufferToken1Balance,
+                "Insufficient exit liquidity"
             );
         }
 
-        // Add swap slippage to the calculations
-        uint256 proRataBalanceWithSlippage =
-            proRataBalance.add(proRataBalance.div(SWAP_SLIPPAGE));
-
-        require(
-            proRataBalanceWithSlippage <= bufferBalance,
-            "Insufficient exit liquidity"
-        );
         super._burn(msg.sender, amount);
 
         // Fee is in wei (18 decimals, so doesn't need to be normalized)
         uint256 fee = Utils.calculateFee(proRataBalance, feeDivisors.burnFee);
         if (outputAsset == 0) {
             withdrawableToken0Fees = withdrawableToken0Fees.add(fee);
+            uint256 transferAmount =
+                getToken0AmountInNativeDecimals(proRataBalance.sub(fee));
+            token0.safeTransfer(msg.sender, transferAmount);
         } else {
             withdrawableToken1Fees = withdrawableToken1Fees.add(fee);
+            uint256 transferAmount =
+                getToken1AmountInNativeDecimals(proRataBalance.sub(fee));
+            token1.safeTransfer(msg.sender, transferAmount);
         }
-        uint256 transferAmount = proRataBalance.sub(fee);
-        transferOnBurn(outputAsset, transferAmount);
     }
 
     function transfer(address recipient, uint256 amount)
@@ -545,45 +549,6 @@ contract xU3LPStable is
         collect();
         (_amount0, _amount1) = unstakePosition(getPositionLiquidity());
         collectPosition(uint128(_amount0), uint128(_amount1));
-    }
-
-    /**
-     * Transfers asset amount when user calls burn()
-     * If there's not enough balance of that asset,
-     * triggers a router swap to increase the balance
-     * keep token ratio in xU3LP at 50:50 after swapping
-     */
-    function transferOnBurn(uint8 outputAsset, uint256 transferAmount) private {
-        (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
-        if (outputAsset == 0) {
-            if (balance0 < transferAmount) {
-                uint256 amountIn =
-                    transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(
-                        balance0
-                    );
-                uint256 amountOut = transferAmount.sub(balance0);
-                uint256 balanceFactor = Utils.sub0(balance1, amountOut).div(2);
-                amountIn = amountIn.add(balanceFactor);
-                amountOut = amountOut.add(balanceFactor);
-                swapToken1ForToken0(amountIn, amountOut);
-            }
-            transferAmount = getToken0AmountInNativeDecimals(transferAmount);
-            token0.safeTransfer(msg.sender, transferAmount);
-        } else {
-            if (balance1 < transferAmount) {
-                uint256 amountIn =
-                    transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(
-                        balance1
-                    );
-                uint256 amountOut = transferAmount.sub(balance1);
-                uint256 balanceFactor = Utils.sub0(balance0, amountOut).div(2);
-                amountIn = amountIn.add(balanceFactor);
-                amountOut = amountOut.add(balanceFactor);
-                swapToken0ForToken1(amountIn, amountOut);
-            }
-            transferAmount = getToken1AmountInNativeDecimals(transferAmount);
-            token1.safeTransfer(msg.sender, transferAmount);
-        }
     }
 
     /**

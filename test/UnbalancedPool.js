@@ -29,8 +29,11 @@ describe('Contract: xU3LP', async () => {
       // after swap: 65M token0 and 125M token1 - ~1:2 ratio
 
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(5000000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
+      await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
 
       await xU3LP.rebalance();
@@ -38,19 +41,14 @@ describe('Contract: xU3LP', async () => {
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(4400000);
+      burnAmount1 = bnDecimal(4800000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      // burn 95% of buffer balance - token 0
-      burnAmount = bnDecimal(9000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -91,8 +89,11 @@ describe('Contract: xU3LP', async () => {
       // after swap: 45M token0 and 145M token1 - ~1:3 ratio
 
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(5000000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
+      await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
 
       await xU3LP.rebalance();
@@ -100,19 +101,14 @@ describe('Contract: xU3LP', async () => {
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount); 
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(4400000);
+      burnAmount1 = bnDecimal(4800000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      // burn 95% of buffer balance - token 0
-      burnAmount = bnDecimal(9000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -153,27 +149,26 @@ describe('Contract: xU3LP', async () => {
       // after swap: 30M token0 and 160M token1 - ~1:5 ratio
       
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(5000000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
+      await mineBlocks(5);
+
       await xU3LP.rebalance();
 
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(4400000);
+      burnAmount1 = bnDecimal(4800000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      // burn 95% of buffer balance - token 0
-      burnAmount = bnDecimal(9000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -214,27 +209,26 @@ describe('Contract: xU3LP', async () => {
       // after swap: 15M token0 and 175M token1 - ~1:10 ratio
       
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(5000000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
+      await mineBlocks(5);
+
       await xU3LP.rebalance();
 
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(4400000);
+      burnAmount1 = bnDecimal(4800000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      // burn 95% of buffer balance - token 0
-      burnAmount = bnDecimal(9000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -275,9 +269,13 @@ describe('Contract: xU3LP', async () => {
       // after swap: 5M token0 and 185M token1 - ~1:40 ratio
 
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(5000000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
+      await mineBlocks(5);
+
       await xU3LP.rebalance();
 
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -310,19 +308,14 @@ describe('Contract: xU3LP', async () => {
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(4400000);
+      burnAmount1 = bnDecimal(4800000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      //burn 90% of buffer balance - token 0
-      burnAmount = bnDecimal(8000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -337,8 +330,11 @@ describe('Contract: xU3LP', async () => {
       // after swap: 125M token0 and 65M token1 - ~2:1 ratio
 
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(4990000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
+      await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
 
       await xU3LP.rebalance();
@@ -346,19 +342,14 @@ describe('Contract: xU3LP', async () => {
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(4400000);
+      burnAmount1 = bnDecimal(4800000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      // burn 95% of buffer balance - token 0
-      burnAmount = bnDecimal(9000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -399,8 +390,11 @@ describe('Contract: xU3LP', async () => {
       // after swap: 145M token0 and 45M token1 - ~3:1 ratio
 
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(4990000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
+      await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
 
       await xU3LP.rebalance();
@@ -408,19 +402,14 @@ describe('Contract: xU3LP', async () => {
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(5000000);
+      burnAmount1 = bnDecimal(4200000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      // burn 95% of buffer balance - token 0
-      burnAmount = bnDecimal(9000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -461,8 +450,11 @@ describe('Contract: xU3LP', async () => {
       // after swap: 160M token0 and 30M token1 - ~5:1 ratio
 
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(4990000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
+      await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
 
       await xU3LP.rebalance();
@@ -470,19 +462,14 @@ describe('Contract: xU3LP', async () => {
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(5000000);
+      burnAmount1 = bnDecimal(3000000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      // burn 95% of buffer balance - token 0
-      burnAmount = bnDecimal(9000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -523,8 +510,11 @@ describe('Contract: xU3LP', async () => {
       // after swap: 175M token0 and 15M token1 - ~10:1 ratio
 
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(4990000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
+      await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
 
       await xU3LP.rebalance();
@@ -532,19 +522,14 @@ describe('Contract: xU3LP', async () => {
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(5000000);
+      burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      // burn 95% of buffer balance - token 0
-      burnAmount = bnDecimal(9000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -585,9 +570,13 @@ describe('Contract: xU3LP', async () => {
       // after swap: 185M token0 and 5M token1 - ~40:1 ratio
 
       // burn 70% of buffer balance
-      let burnAmount = bnDecimal(7000000);
-      await xU3LP.burn(0, burnAmount);
+      let burnAmount0 = bnDecimal(4990000);
+      let burnAmount1 = bnDecimal(2000000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
+      await xU3LP.burn(1, burnAmount1);
+      await mineBlocks(5);
+
       await xU3LP.rebalance();
 
       let bufferPoolRatio = await getBufferPositionRatio(xU3LP);
@@ -620,19 +609,14 @@ describe('Contract: xU3LP', async () => {
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);
       expect(bufferPoolRatio).to.be.equal('5.0');
 
-      // burn 95% of buffer balance - token 1
-      burnAmount = bnDecimal(9200000);
-      await xU3LP.burn(1, burnAmount);
+      // burn 95% of buffer balance - token 0 and 1
+      burnAmount0 = bnDecimal(4400000);
+      burnAmount1 = bnDecimal(4800000);
+      await xU3LP.burn(0, burnAmount0);
       await mineBlocks(5);
-      await xU3LP.rebalance();
-
-      bufferPoolRatio = await getBufferPositionRatio(xU3LP);
-      expect(bufferPoolRatio).to.be.equal('5.0');
-
-      //burn 90% of buffer balance - token 0
-      burnAmount = bnDecimal(8000000);
-      await xU3LP.burn(0, burnAmount);
+      await xU3LP.burn(1, burnAmount1);
       await mineBlocks(5);
+      
       await xU3LP.rebalance();
 
       bufferPoolRatio = await getBufferPositionRatio(xU3LP);

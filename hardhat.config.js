@@ -13,12 +13,15 @@ module.exports = {
     hardhat: {
 			forking: {
 				url: process.env.ALCHEMY_URL,
-        enabled: false
-			}
+        enabled: false,
+        blockNumber: 12831054
+			},
+      allowUnlimitedContractSize: true
     },
     mainnet: {
       url: process.env.ALCHEMY_URL,
-      accounts: [process.env.ADMIN_PRIVATE_KEY]
+      accounts: [process.env.ADMIN_PRIVATE_KEY],
+      gasPrice: 44000000000 // 50 gwei
     }
   },
   etherscan: {
@@ -35,6 +38,6 @@ module.exports = {
   },
   contractSizer: {
     alphaSort: true,
-    runOnCompile: false,
+    runOnCompile: true,
   }
 }
