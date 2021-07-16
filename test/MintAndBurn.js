@@ -137,14 +137,6 @@ describe('Contract: xU3LP', async () => {
       expect(token0BalanceBefore.add(expectedReturnedAssetAmount)).to.be.eq(token0BalanceAfter);
     }),
 
-    it('should allow user to burn token even if there\'s not enough token balance', async () => {
-      await xU3LP.rebalance();
-      let balance0 = await token0.balanceOf(xU3LP.address);
-      let burnAmount = bnDecimal(9000000);
-      expect(balance0).to.be.lt(burnAmount);
-      await xU3LP.burn(0, burnAmount);
-    }),
-
     it('shouldn\'t allow user to burn if he hasn\'t minted', async () => {
       let burnAmount = bnDecimals(10000, token0Decimals);
       expect(await xU3LP.balanceOf(user2.address)).to.equal(0);
