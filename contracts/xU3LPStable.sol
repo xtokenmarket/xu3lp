@@ -172,7 +172,6 @@ contract xU3LPStable is
             _mintInternal(getToken0AmountInWei(amount.sub(fee)));
         } else {
             token1.safeTransferFrom(msg.sender, address(this), amount);
-            amount = getAmountInAsset0Terms(amount);
             uint256 fee = Utils.calculateFee(amount, feeDivisors.mintFee);
             _incrementWithdrawableToken1Fees(fee);
             _mintInternal(getToken1AmountInWei(amount.sub(fee)));
@@ -205,7 +204,7 @@ contract xU3LPStable is
             );
         } else {
             proRataBalance = (
-                nav.mul(getAmountInAsset1Terms(amount)).div(totalSupply())
+                nav.mul(amount).div(totalSupply())
             );
             require(
                 proRataBalance <= bufferToken1Balance,
@@ -519,7 +518,7 @@ contract xU3LPStable is
         amount0 = getToken0AmountInWei(amount0);
         amount1 = getToken1AmountInWei(amount1);
         _mintInternal(
-            getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1))
+            getAmountInAsset1Terms(amount0).add(amount1)
         );
     }
 
