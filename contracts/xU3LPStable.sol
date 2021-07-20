@@ -277,13 +277,13 @@ contract xU3LPStable is
     // Get total balance in the position
     function getStakedBalance() public view returns (uint256) {
         (uint256 amount0, uint256 amount1) = getStakedTokenBalance();
-        return getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1));
+        return getAmountInAsset1Terms(amount0).add(amount1);
     }
 
     // Get balance in xU3LP contract
     function getBufferBalance() public view returns (uint256) {
         (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
-        return getAmountInAsset1Terms(balance0).add(getAmountInAsset0Terms(balance1));
+        return getAmountInAsset1Terms(balance0).add(balance1);
     }
 
     // Get token balances in xU3LP contract
