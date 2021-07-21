@@ -10,6 +10,7 @@ import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
 import "./ABDKMath64x64.sol";
@@ -21,11 +22,16 @@ import "./Utils.sol";
  */
 library UniswapLibrary {
     using SafeMath for uint256;
+    using SafeERC20 for IERC20;
 
     uint8 private constant TOKEN_DECIMAL_REPRESENTATION = 18;
     uint256 private constant SWAP_SLIPPAGE = 100; // 1%
     uint256 private constant MINT_BURN_SLIPPAGE = 100; // 1%
     uint256 private constant BUFFER_TARGET = 20; // 5% target
+
+    // 1inch v3 exchange address
+    address private constant oneInchExchange =
+        0x11111112542D85B3EF69AE05771c2dCCff4fAa26;
 
     struct TokenDetails {
         address token0;
@@ -334,7 +340,7 @@ library UniswapLibrary {
     /* ========================================================================================= */
 
     /**
-     * @dev Swap token 0 for token 1 in xAssetCLR contract
+     * @dev Swap token 0 for token 1 in xU3LP / xAssetCLR contract
      * @dev amountIn and amountOut should be in 18 decimals always
      */
     function swapToken0ForToken1(
@@ -370,7 +376,7 @@ library UniswapLibrary {
     }
 
     /**
-     * @dev Swap token 1 for token 0 in xAssetCLR contract
+     * @dev Swap token 1 for token 0 in xU3LP / xAssetCLR contract
      * @dev amountIn and amountOut should be in 18 decimals always
      */
     function swapToken1ForToken0(
@@ -403,6 +409,96 @@ library UniswapLibrary {
                 sqrtPriceLimitX96: TickMath.MAX_SQRT_RATIO - 1
             })
         );
+    }
+
+    /* ========================================================================================= */
+    /*                               1inch Swap Helper functions                                 */
+    /* ========================================================================================= */
+
+    /**
+     * @dev Swap tokens in xU3LP / xAssetCLR using 1inch v3 exchange
+     * @param xU3LP - swap for xU3LP if true, xAssetCLR if false
+     * @param minReturn - required min amount out from swap, in 18 decimals
+     * @param _0for1 - swap token0 for token1 if true, token1 for token0 if false
+     * @param tokenDetails - xU3LP / xAssetCLR token 0 and token 1 details 
+     * @param _oneInchData - One inch calldata, generated off-chain from their v3 api for the swap
+     */
+    function oneInchSwap(
+        bool xU3LP,
+        uint256 minReturn,
+        bool _0for1,
+        TokenDetails memory tokenDetails,
+        bytes memory _oneInchData
+    ) public {
+        uint256 token0AmtSwapped;
+        uint256 token1AmtSwapped;
+        bool success;
+
+        // inline code to prevent stack too deep errors 
+        {
+            IERC20 token0 = IERC20(tokenDetails.token0);
+            IERC20 token1 = IERC20(tokenDetails.token1);
+            uint256 balanceBeforeToken0 = token0.balanceOf(address(this));
+            uint256 balanceBeforeToken1 = token1.balanceOf(address(this));
+
+            (success, ) = oneInchExchange.call(_oneInchData);
+
+            require(success, "One inch swap call failed");
+
+            uint256 balanceAfterToken0 = token0.balanceOf(address(this));
+            uint256 balanceAfterToken1 = token1.balanceOf(address(this));
+
+            token0AmtSwapped = subAbs(balanceAfterToken0, balanceBeforeToken0);
+            token1AmtSwapped = subAbs(balanceAfterToken1, balanceBeforeToken1);
+        }
+
+        uint256 amountInSwapped;
+        uint256 amountOutReceived;
+        
+        if (_0for1) {
+            amountInSwapped = getToken0AmountInWei(
+                token0AmtSwapped,
+                tokenDetails.token0Decimals,
+                tokenDetails.token0DecimalMultiplier
+            );
+            amountOutReceived = getToken1AmountInWei(
+                token1AmtSwapped,
+                tokenDetails.token1Decimals,
+                tokenDetails.token1DecimalMultiplier
+            );
+        } else {
+            amountInSwapped = getToken1AmountInWei(
+                token1AmtSwapped,
+                tokenDetails.token1Decimals,
+                tokenDetails.token1DecimalMultiplier
+            );
+            amountOutReceived = getToken0AmountInWei(
+                token0AmtSwapped,
+                tokenDetails.token0Decimals,
+                tokenDetails.token0DecimalMultiplier
+            );
+        }
+        // require minimum amount received is > min return
+        require(
+            amountOutReceived > minReturn,
+            "One inch swap not enough output token amount"
+        );
+        // require amount out > amount in * 98%
+        // only for xU3LP
+        require(
+            xU3LP &&
+            amountOutReceived >
+                amountInSwapped.sub(amountInSwapped.div(SWAP_SLIPPAGE * 2)),
+            "One inch swap slippage > 2 %"
+        );
+    }
+
+    /**
+     * Approve 1inch v3 for swaps
+     */
+    function approveOneInch(IERC20 token0, IERC20 token1) public {
+        token0.safeApprove(oneInchExchange, type(uint256).max);
+        token1.safeApprove(oneInchExchange, type(uint256).max);
     }
 
     /* ========================================================================================= */

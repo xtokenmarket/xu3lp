@@ -89,6 +89,28 @@ async function deployForked() {
     await printPositionAndBufferBalance(xU3LP);
     await getTokenPrices(xU3LP);
 
+    // test 1inch swap
+
+    // await xU3LP.mintWithToken(0, bnDecimal(10000));
+    // await mineBlocks(5);
+
+    // await xU3LP.approveOneInch();
+    // console.log('one inch approved');
+
+    // // 1k DAI to USDC swap calldata
+    // const oneInchCalldata = '0x2e95b6c80000000000000000000000006b175474e89094c44da98b954eedeac495271d0f00000000000000000000000000000000000000000000003635C9ADC5DEA0000000000000000000000000000000000000000000000000000000000000000f12540000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000100000000000000003b6d0340ae461ca67b15dc8dc81ce7615e0320da1a9ab8d5';
+
+    // let usdcBalanceBefore = await token1.balanceOf(xU3LP.address);
+
+    // // swap using 1inch - expecting at least 990 usdc in return
+    // tx = await xU3LP.adminSwapOneInch(bnDecimal(990), true, oneInchCalldata);
+
+    // let usdcBalanceAfter = await token1.balanceOf(xU3LP.address);
+    // let swapAmount = usdcBalanceAfter.sub(usdcBalanceBefore);
+
+    // console.log('one inch swap success');
+    // console.log('swapped:', swapAmount.div(1e6).toString());
+
     let mintTx = await xU3LP.mintWithToken(0, bnDecimals(10, token0Decimals));
     await mineBlocks(5);
     let mintTx2 = await xU3LP.mintWithToken(1, bnDecimals(10, token1Decimals));

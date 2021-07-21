@@ -771,6 +771,33 @@ contract xU3LPStable is
         }
     }
 
+    /**
+     * @dev Admin function for swapping LP tokens in xU3LP using 1inch v3 exchange
+     * @param minReturn - how much output tokens to receive on swap, in 18 decimals
+     * @param _0for1 - swap token 0 for token 1 if true, token 1 for token 0 if false
+     * @param _oneInchData - 1inch calldata, generated off-chain using their v3 api
+     */
+    function adminSwapOneInch(
+        uint256 minReturn,
+        bool _0for1,
+        bytes memory _oneInchData
+    ) external onlyOwnerOrManager {
+        UniswapLibrary.oneInchSwap(
+            true,
+            minReturn,
+            _0for1,
+            UniswapLibrary.TokenDetails({
+                token0: address(token0),
+                token1: address(token1),
+                token0DecimalMultiplier: token0DecimalMultiplier,
+                token1DecimalMultiplier: token1DecimalMultiplier,
+                token0Decimals: token0Decimals,
+                token1Decimals: token1Decimals
+            }),
+            _oneInchData
+        );
+    }
+
     function pauseContract() external onlyOwnerOrManager returns (bool) {
         _pause();
         return true;
@@ -1024,5 +1051,12 @@ contract xU3LPStable is
                 token1Decimals,
                 token1DecimalMultiplier
             );
+    }
+
+    /**
+     * Approve 1inch v3 exchange for swaps
+     */
+    function approveOneInch() external onlyOwnerOrManager {
+        UniswapLibrary.approveOneInch(token0, token1);
     }
 }
