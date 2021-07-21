@@ -195,9 +195,7 @@ contract xU3LPStable is
                 "Insufficient exit liquidity"
             );
         } else {
-            proRataBalance = (
-                nav.mul(amount).div(totalSupply())
-            );
+            proRataBalance = (nav.mul(amount).div(totalSupply()));
             require(
                 proRataBalance <= bufferToken1Balance,
                 "Insufficient exit liquidity"
@@ -318,19 +316,13 @@ contract xU3LPStable is
     // Get total balance in the position
     function getStakedBalance() public view returns (uint256) {
         (uint256 amount0, uint256 amount1) = getStakedTokenBalance();
-        return
-            getAmountInAsset1Terms(amount0).add(
-                getAmountInAsset0Terms(amount1)
-            );
+        return getAmountInAsset1Terms(amount0).add(amount1);
     }
 
     // Get balance in xU3LP contract
     function getBufferBalance() public view returns (uint256) {
         (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
-        return
-            getAmountInAsset1Terms(balance0).add(
-                getAmountInAsset0Terms(balance1)
-            );
+        return getAmountInAsset1Terms(balance0).add(balance1);
     }
 
     // Get token balances in xU3LP contract
@@ -574,9 +566,7 @@ contract xU3LPStable is
         tokenId = createPosition(amount0, amount1);
         amount0 = getToken0AmountInWei(amount0);
         amount1 = getToken1AmountInWei(amount1);
-        _mintInternal(
-            getAmountInAsset1Terms(amount0).add(amount1)
-        );
+        _mintInternal(getAmountInAsset1Terms(amount0).add(amount1));
     }
 
     /**
@@ -812,7 +802,10 @@ contract xU3LPStable is
     }
 
     modifier onlyOwnerOrManager {
-        require(xTokenManager.isManager(msg.sender, address(this)), "Function may be called only by owner or manager");
+        require(
+            xTokenManager.isManager(msg.sender, address(this)),
+            "Function may be called only by owner or manager"
+        );
         _;
     }
 
@@ -1050,7 +1043,7 @@ contract xU3LPStable is
     function setxTokenManager(IxTokenManager _manager) external onlyOwner {
         xTokenManager = _manager;
     }
- 
+
     /**
      * Approve 1inch v3 exchange for swaps
      */

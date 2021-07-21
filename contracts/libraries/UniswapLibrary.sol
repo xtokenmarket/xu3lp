@@ -420,7 +420,7 @@ library UniswapLibrary {
      * @param xU3LP - swap for xU3LP if true, xAssetCLR if false
      * @param minReturn - required min amount out from swap, in 18 decimals
      * @param _0for1 - swap token0 for token1 if true, token1 for token0 if false
-     * @param tokenDetails - xU3LP / xAssetCLR token 0 and token 1 details 
+     * @param tokenDetails - xU3LP / xAssetCLR token 0 and token 1 details
      * @param _oneInchData - One inch calldata, generated off-chain from their v3 api for the swap
      */
     function oneInchSwap(
@@ -434,7 +434,7 @@ library UniswapLibrary {
         uint256 token1AmtSwapped;
         bool success;
 
-        // inline code to prevent stack too deep errors 
+        // inline code to prevent stack too deep errors
         {
             IERC20 token0 = IERC20(tokenDetails.token0);
             IERC20 token1 = IERC20(tokenDetails.token1);
@@ -454,7 +454,7 @@ library UniswapLibrary {
 
         uint256 amountInSwapped;
         uint256 amountOutReceived;
-        
+
         if (_0for1) {
             amountInSwapped = getToken0AmountInWei(
                 token0AmtSwapped,
@@ -487,7 +487,7 @@ library UniswapLibrary {
         // only for xU3LP
         require(
             xU3LP &&
-            amountOutReceived >
+                amountOutReceived >
                 amountInSwapped.sub(amountInSwapped.div(SWAP_SLIPPAGE * 2)),
             "One inch swap slippage > 2 %"
         );
