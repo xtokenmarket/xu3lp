@@ -8,7 +8,7 @@ describe('Contract: xU3LP', async () => {
   let xU3LP, token0, token1, token0Decimals, token1Decimals, admin, user1, user2, user3;
 
   beforeEach(async () => {
-      ({ xU3LP, token0, token1, token0Decimals, token1Decimals } = await deploymentFixture());
+      ({ xU3LP, token0, token1, xTokenManager, token0Decimals, token1Decimals } = await deploymentFixture());
       [admin, user1, user2, user3, ...addrs] = await ethers.getSigners();
       let mintAmount = bnDecimals(100000000, token0Decimals);
       let mintAmount2 = bnDecimals(100000000, token1Decimals);
@@ -22,8 +22,8 @@ describe('Contract: xU3LP', async () => {
       await mineBlocks(5);
       await xU3LP.rebalance();
       // set managers
-      await xU3LP.setManager(user1.address);
-      await xU3LP.setManager2(user2.address);
+      await xTokenManager.addManager(user1.address, xU3LP.address);
+      await xTokenManager.addManager(user2.address, xU3LP.address);
   })
 
   describe('Management', async () => {

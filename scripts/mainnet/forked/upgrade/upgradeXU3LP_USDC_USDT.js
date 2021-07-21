@@ -1,5 +1,5 @@
 const { ethers } = require('hardhat');
-const { deploy, deployAndLink, printPositionAndBufferBalance, 
+const { deploy, deployAndLink, printPositionAndBufferBalance, getMainnetxTokenManager,
   bnDecimal, bnDecimals, getTokenPrices, mineBlocks } = require('../../../helpers');
 require('dotenv').config();
 const tokenAddresses = require('../../../tokenAddresses.json');
@@ -74,7 +74,10 @@ async function deployForked() {
 
     const adminSigner = await ethers.getSigner(adminAddress);
 
-    await xU3LP.connect(adminSigner).setManager2(admin.address);
+    // Set admin address as manager to xU3LP instance
+    const xTokenManager = await getMainnetxTokenManager();
+    await xU3LP.connect(adminSigner).setxTokenManager(xTokenManager.address);
+    await xTokenManager.connect(adminSigner).addManager(admin.address, proxyAddress);
     console.log('success making own address manager');
     
     // approve xU3LP

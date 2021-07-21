@@ -16,6 +16,8 @@ import "./libraries/Utils.sol";
 import "./libraries/UniswapLibrary.sol";
 import "./BlockLock.sol";
 
+import "./interfaces/IxTokenManager.sol";
+
 contract xU3LPStable is
     Initializable,
     ERC20Upgradeable,
@@ -75,6 +77,8 @@ contract xU3LPStable is
     FeeDivisors public feeDivisors;
 
     uint32 twapPeriod;
+
+    IxTokenManager xTokenManager; // xToken manager contract
 
     event Rebalance();
     event FeeDivisorsSet(uint256 mintFee, uint256 burnFee, uint256 claimFee);
@@ -808,20 +812,8 @@ contract xU3LPStable is
         return true;
     }
 
-    function setManager(address _manager) external onlyOwner {
-        manager = _manager;
-    }
-
-    function setManager2(address _manager2) external onlyOwner {
-        manager2 = _manager2;
-    }
-
     modifier onlyOwnerOrManager {
-        require(
-            msg.sender == owner() ||
-                msg.sender == manager ||
-                msg.sender == manager2
-        );
+        require(xTokenManager.isManager(msg.sender, address(this)), "Function may be called only by owner or manager");
         _;
     }
 
@@ -1053,6 +1045,13 @@ contract xU3LPStable is
             );
     }
 
+    /**
+     * Set xTokenManager contract
+     */
+    function setxTokenManager(IxTokenManager _manager) external onlyOwner {
+        xTokenManager = _manager;
+    }
+ 
     /**
      * Approve 1inch v3 exchange for swaps
      */

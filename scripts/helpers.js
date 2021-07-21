@@ -77,6 +77,31 @@ async function getPoolAddresses() {
 }
 
 /**
+ * @dev Deploys xTokenManager and sets admin as manager for hardhat testing
+ * @param instanceAddress - address of xU3LP instance to add manager to
+ * @return xTokenManager contract instance
+ */
+async function deployTokenManager(instanceAddress) {
+    let [admin, proxyAdmin] = await ethers.getSigners();
+    const xTokenManagerImpl = await deploy('xTokenManager');
+    const proxy = await deployArgs('xTokenManagerProxy', xTokenManagerImpl.address, proxyAdmin.address);
+
+    const xTokenManager = await ethers.getContractAt('xTokenManager', proxy.address);
+    await xTokenManager.initialize();
+    await xTokenManager.addManager(admin.address, instanceAddress);
+    return xTokenManager;
+}
+
+/**
+ * Get mainnet xToken Manager contract instance
+ */
+async function getMainnetxTokenManager() {
+    const xTokenManagerAddress = '0xfA3CaAb19E6913b6aAbdda4E27ac413e96EaB0Ca';
+    const xTokenManager = await ethers.getContractAt('xTokenManager', xTokenManagerAddress);
+    return xTokenManager;
+}
+
+/**
  * Get balance of two tokens
  * Used for testing Uniswap pool's tokens
  */
@@ -407,5 +432,6 @@ module.exports = {
     bn, bnDecimal, bnDecimals, getNumberNoDecimals, getNumberDivDecimals, 
     getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0, 
     swapToken0ForToken1Decimals, swapToken1ForToken0Decimals, printPositionAndBufferBalance,
-    increaseTime, mineBlocks, getBufferPositionRatio, getPoolAddresses, getTokens
+    increaseTime, mineBlocks, getBufferPositionRatio, getPoolAddresses, getTokens,
+    deployTokenManager, getMainnetxTokenManager
 }
