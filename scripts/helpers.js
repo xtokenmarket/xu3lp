@@ -77,6 +77,90 @@ async function getPoolAddresses() {
 }
 
 /**
+ * @dev Deploys xTokenManager and sets admin as manager for hardhat testing
+ * @param instanceAddress - address of xU3LP instance to add manager to
+ * @return xTokenManager contract instance
+ */
+async function deployTokenManager(instanceAddress) {
+    let [admin, proxyAdmin] = await ethers.getSigners();
+    const xTokenManagerImpl = await deploy('xTokenManager');
+    const proxy = await deployArgs('xTokenManagerProxy', xTokenManagerImpl.address, proxyAdmin.address);
+
+    const xTokenManager = await ethers.getContractAt('xTokenManager', proxy.address);
+    await xTokenManager.initialize();
+    await xTokenManager.addManager(admin.address, instanceAddress);
+    await xTokenManager.setRevenueController(admin.address);
+    return xTokenManager;
+}
+
+/**
+ * Get mainnet xToken Manager contract instance
+ */
+async function getMainnetxTokenManager() {
+    const xTokenManagerAddress = '0xfA3CaAb19E6913b6aAbdda4E27ac413e96EaB0Ca';
+    const xTokenManager = await ethers.getContractAt('xTokenManager', xTokenManagerAddress);
+    return xTokenManager;
+}
+
+
+/**
+ * Get xU3LP tokens expected to be minted for asset
+ * @param {Contract} xU3LP 
+ * @param {Number} amount 
+ * @param {Contract} token 
+ * @param {Boolean} forAsset0 - receive asset 0 expected if true, 1 if false
+ * @returns 
+ */
+ async function getExpectedMintAmount(xU3LP, amount, token, forAsset0) {
+    let decimals = await token.decimals();
+    let feeDivisors = await xU3LP.feeDivisors();
+    let mintFee = feeDivisors.mintFee;
+
+    let amountInTerms = forAsset0 ? 
+        await xU3LP.getAmountInAsset1Terms(amount) :
+        amount;
+
+    let amountWithoutFees = amountInTerms.sub(amountInTerms.div(mintFee))
+    if(decimals < 18) {
+        amountWithoutFees = amountWithoutFees.mul(bn(10).pow(18 - decimals));
+    }
+    const nav = await xU3LP.getNav();
+    const totalSupply = await xU3LP.totalSupply();
+    let expectedAmount = bn(amountWithoutFees).mul(totalSupply).div(nav);
+    return expectedAmount;
+}
+
+/**
+ * Get expected tokens received for burning of xU3LP amount
+ * @param {Contract} xU3LP 
+ * @param {Number} amount 
+ * @param {Contract} token 
+ * @param {Boolean} forAsset0 - receive asset 0 expected if true, 1 if false 
+ */
+async function getExpectedBurnAmount(xU3LP, amount, token, forAsset0) {
+    const decimals = await token.decimals();
+    const nav = await xU3LP.getNav();
+    const totalSupply = await xU3LP.totalSupply();
+    let amountInTerms = forAsset0 ? 
+        await xU3LP.getAmountInAsset0Terms(amount) :
+        amount;
+
+    let proRataBalance = amountInTerms.mul(nav).div(totalSupply);
+    let feeDivisors = await xU3LP.feeDivisors();
+    let burnFee = feeDivisors.burnFee;
+    let calculatedFee = proRataBalance.div(burnFee);
+    let expectedReturnedAssetAmount = (proRataBalance.sub(calculatedFee));
+    // divide by decimal difference (since burn amount is in xU3LP tokens)
+    let xu3lpDecimals = await xU3LP.decimals();
+    if(decimals < xu3lpDecimals) {
+        let diffDivisor = bn(10).pow(bn(xu3lpDecimals - decimals));
+        expectedReturnedAssetAmount = expectedReturnedAssetAmount.div(diffDivisor);
+    }
+    return expectedReturnedAssetAmount;
+}
+
+
+/**
  * Get balance of two tokens
  * Used for testing Uniswap pool's tokens
  */
@@ -407,5 +491,6 @@ module.exports = {
     bn, bnDecimal, bnDecimals, getNumberNoDecimals, getNumberDivDecimals, 
     getBlockTimestamp, swapToken0ForToken1, swapToken1ForToken0, 
     swapToken0ForToken1Decimals, swapToken1ForToken0Decimals, printPositionAndBufferBalance,
-    increaseTime, mineBlocks, getBufferPositionRatio, getPoolAddresses, getTokens
+    increaseTime, mineBlocks, getBufferPositionRatio, getPoolAddresses, getTokens,
+    deployTokenManager, getMainnetxTokenManager, getExpectedMintAmount, getExpectedBurnAmount
 }

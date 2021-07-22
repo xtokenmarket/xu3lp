@@ -16,6 +16,8 @@ import "./libraries/Utils.sol";
 import "./libraries/UniswapLibrary.sol";
 import "./BlockLock.sol";
 
+import "./interfaces/IxTokenManager.sol";
+
 contract xU3LPStable is
     Initializable,
     ERC20Upgradeable,
@@ -75,6 +77,8 @@ contract xU3LPStable is
     FeeDivisors public feeDivisors;
 
     uint32 twapPeriod;
+
+    IxTokenManager xTokenManager; // xToken manager contract
 
     event Rebalance();
     event FeeDivisorsSet(uint256 mintFee, uint256 burnFee, uint256 claimFee);
@@ -160,7 +164,6 @@ contract xU3LPStable is
             _mintInternal(getToken0AmountInWei(amount.sub(fee)));
         } else {
             token1.safeTransferFrom(msg.sender, address(this), amount);
-            amount = getAmountInAsset0Terms(amount);
             uint256 fee = Utils.calculateFee(amount, feeDivisors.mintFee);
             _incrementWithdrawableToken1Fees(fee);
             _mintInternal(getToken1AmountInWei(amount.sub(fee)));
@@ -178,40 +181,42 @@ contract xU3LPStable is
         require(amount > 0);
         lock(msg.sender);
         checkTwap();
-        uint256 bufferBalance = getBufferBalance();
-        uint256 totalBalance = bufferBalance.add(getStakedBalance());
+        (uint256 bufferToken0Balance, uint256 bufferToken1Balance) =
+            getBufferTokenBalance();
+        uint256 nav = getNav();
 
         uint256 proRataBalance;
         if (outputAsset == 0) {
-            proRataBalance = (totalBalance.mul(getAmountInAsset0Terms(amount)))
-                .div(totalSupply());
+            proRataBalance = (nav.mul(getAmountInAsset0Terms(amount))).div(
+                totalSupply()
+            );
+            require(
+                proRataBalance <= bufferToken0Balance,
+                "Insufficient exit liquidity"
+            );
         } else {
-            proRataBalance = (
-                totalBalance.mul(getAmountInAsset1Terms(amount)).div(
-                    totalSupply()
-                )
+            proRataBalance = (nav.mul(amount).div(totalSupply()));
+            require(
+                proRataBalance <= bufferToken1Balance,
+                "Insufficient exit liquidity"
             );
         }
 
-        // Add swap slippage to the calculations
-        uint256 proRataBalanceWithSlippage =
-            proRataBalance.add(proRataBalance.div(SWAP_SLIPPAGE));
-
-        require(
-            proRataBalanceWithSlippage <= bufferBalance,
-            "Insufficient exit liquidity"
-        );
         super._burn(msg.sender, amount);
 
         // Fee is in wei (18 decimals, so doesn't need to be normalized)
         uint256 fee = Utils.calculateFee(proRataBalance, feeDivisors.burnFee);
         if (outputAsset == 0) {
             withdrawableToken0Fees = withdrawableToken0Fees.add(fee);
+            uint256 transferAmount =
+                getToken0AmountInNativeDecimals(proRataBalance.sub(fee));
+            token0.safeTransfer(msg.sender, transferAmount);
         } else {
             withdrawableToken1Fees = withdrawableToken1Fees.add(fee);
+            uint256 transferAmount =
+                getToken1AmountInNativeDecimals(proRataBalance.sub(fee));
+            token1.safeTransfer(msg.sender, transferAmount);
         }
-        uint256 transferAmount = proRataBalance.sub(fee);
-        transferOnBurn(outputAsset, transferAmount);
     }
 
     function transfer(address recipient, uint256 amount)
@@ -311,19 +316,13 @@ contract xU3LPStable is
     // Get total balance in the position
     function getStakedBalance() public view returns (uint256) {
         (uint256 amount0, uint256 amount1) = getStakedTokenBalance();
-        return
-            getAmountInAsset1Terms(amount0).add(
-                getAmountInAsset0Terms(amount1)
-            );
+        return getAmountInAsset1Terms(amount0).add(amount1);
     }
 
     // Get balance in xU3LP contract
     function getBufferBalance() public view returns (uint256) {
         (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
-        return
-            getAmountInAsset1Terms(balance0).add(
-                getAmountInAsset0Terms(balance1)
-            );
+        return getAmountInAsset1Terms(balance0).add(balance1);
     }
 
     // Get token balances in xU3LP contract
@@ -548,45 +547,6 @@ contract xU3LPStable is
     }
 
     /**
-     * Transfers asset amount when user calls burn()
-     * If there's not enough balance of that asset,
-     * triggers a router swap to increase the balance
-     * keep token ratio in xU3LP at 50:50 after swapping
-     */
-    function transferOnBurn(uint8 outputAsset, uint256 transferAmount) private {
-        (uint256 balance0, uint256 balance1) = getBufferTokenBalance();
-        if (outputAsset == 0) {
-            if (balance0 < transferAmount) {
-                uint256 amountIn =
-                    transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(
-                        balance0
-                    );
-                uint256 amountOut = transferAmount.sub(balance0);
-                uint256 balanceFactor = Utils.sub0(balance1, amountOut).div(2);
-                amountIn = amountIn.add(balanceFactor);
-                amountOut = amountOut.add(balanceFactor);
-                swapToken1ForToken0(amountIn, amountOut);
-            }
-            transferAmount = getToken0AmountInNativeDecimals(transferAmount);
-            token0.safeTransfer(msg.sender, transferAmount);
-        } else {
-            if (balance1 < transferAmount) {
-                uint256 amountIn =
-                    transferAmount.add(transferAmount.div(SWAP_SLIPPAGE)).sub(
-                        balance1
-                    );
-                uint256 amountOut = transferAmount.sub(balance1);
-                uint256 balanceFactor = Utils.sub0(balance0, amountOut).div(2);
-                amountIn = amountIn.add(balanceFactor);
-                amountOut = amountOut.add(balanceFactor);
-                swapToken0ForToken1(amountIn, amountOut);
-            }
-            transferAmount = getToken1AmountInNativeDecimals(transferAmount);
-            token1.safeTransfer(msg.sender, transferAmount);
-        }
-    }
-
-    /**
      * Mint function which initializes the pool position
      * Must be called before any liquidity can be deposited
      */
@@ -606,9 +566,7 @@ contract xU3LPStable is
         tokenId = createPosition(amount0, amount1);
         amount0 = getToken0AmountInWei(amount0);
         amount1 = getToken1AmountInWei(amount1);
-        _mintInternal(
-            getAmountInAsset1Terms(amount0).add(getAmountInAsset0Terms(amount1))
-        );
+        _mintInternal(getAmountInAsset1Terms(amount0).add(amount1));
     }
 
     /**
@@ -753,7 +711,11 @@ contract xU3LPStable is
     /*
      * Withdraw function for token0 and token1 fees
      */
-    function withdrawFees() external onlyOwnerOrManager {
+    function withdrawFees() external {
+        require(
+            xTokenManager.isRevenueController(msg.sender),
+            "Callable only by Revenue Controller"
+        );
         uint256 token0Fees =
             getToken0AmountInNativeDecimals(withdrawableToken0Fees);
         uint256 token1Fees =
@@ -806,6 +768,33 @@ contract xU3LPStable is
         }
     }
 
+    /**
+     * @dev Admin function for swapping LP tokens in xU3LP using 1inch v3 exchange
+     * @param minReturn - how much output tokens to receive on swap, in 18 decimals
+     * @param _0for1 - swap token 0 for token 1 if true, token 1 for token 0 if false
+     * @param _oneInchData - 1inch calldata, generated off-chain using their v3 api
+     */
+    function adminSwapOneInch(
+        uint256 minReturn,
+        bool _0for1,
+        bytes memory _oneInchData
+    ) external onlyOwnerOrManager {
+        UniswapLibrary.oneInchSwap(
+            true,
+            minReturn,
+            _0for1,
+            UniswapLibrary.TokenDetails({
+                token0: address(token0),
+                token1: address(token1),
+                token0DecimalMultiplier: token0DecimalMultiplier,
+                token1DecimalMultiplier: token1DecimalMultiplier,
+                token0Decimals: token0Decimals,
+                token1Decimals: token1Decimals
+            }),
+            _oneInchData
+        );
+    }
+
     function pauseContract() external onlyOwnerOrManager returns (bool) {
         _pause();
         return true;
@@ -816,19 +805,11 @@ contract xU3LPStable is
         return true;
     }
 
-    function setManager(address _manager) external onlyOwner {
-        manager = _manager;
-    }
-
-    function setManager2(address _manager2) external onlyOwner {
-        manager2 = _manager2;
-    }
-
     modifier onlyOwnerOrManager {
         require(
             msg.sender == owner() ||
-                msg.sender == manager ||
-                msg.sender == manager2
+                xTokenManager.isManager(msg.sender, address(this)),
+            "Function may be called only by owner or manager"
         );
         _;
     }
@@ -1059,5 +1040,20 @@ contract xU3LPStable is
                 token1Decimals,
                 token1DecimalMultiplier
             );
+    }
+
+    /**
+     * Set xTokenManager contract
+     */
+    function setxTokenManager(IxTokenManager _manager) external onlyOwner {
+        require(address(xTokenManager) == address(0));
+        xTokenManager = _manager;
+    }
+
+    /**
+     * Approve 1inch v3 exchange for swaps
+     */
+    function approveOneInch() external onlyOwnerOrManager {
+        UniswapLibrary.approveOneInch(token0, token1);
     }
 }

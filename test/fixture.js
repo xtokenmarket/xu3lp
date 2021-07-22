@@ -1,5 +1,5 @@
 const { ethers } = require('hardhat');
-const { deploy, deployArgs, bnDecimal, bnDecimals, deployWithAbi, getPriceInX96Format, deployAndLink } = require('../scripts/helpers');
+const { deploy, deployArgs, bnDecimal, bnDecimals, deployWithAbi, getPriceInX96Format, deployAndLink, deployTokenManager } = require('../scripts/helpers');
 
 const swapRouter = require('@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json')
 const NFTPositionDescriptor =
@@ -61,6 +61,8 @@ const deploymentFixture = deployments.createFixture(async () => {
     await xU3LP.initialize("xU3LP", lowTick, highTick, token0.address, token1.address, 
         poolAddress, router.address, positionManager.address, 
         {mintFee: 1250, burnFee: 1250, claimFee: 50}, 200, token0Decimals, token1Decimals);
+    const xTokenManager = await deployTokenManager(xU3LP.address);
+    await xU3LP.setxTokenManager(xTokenManager.address);
     await xU3LP.setTwapPeriod(3600);
     
 
@@ -77,7 +79,7 @@ const deploymentFixture = deployments.createFixture(async () => {
     await token1.connect(user).approve(xU3LP.address, approveAmount);
 
     return {
-      token0, token1, token0Decimals, token1Decimals, router, xU3LP
+      token0, token1, token0Decimals, token1Decimals, router, xU3LP, xTokenManager
     }
 });
   

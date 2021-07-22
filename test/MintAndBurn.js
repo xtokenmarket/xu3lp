@@ -1,5 +1,5 @@
 const { deploymentFixture } = require('./fixture');
-const { getXU3LPBalance, bn, bnDecimal, bnDecimals, mineBlocks } = require('../scripts/helpers');
+const { getXU3LPBalance, bn, bnDecimal, bnDecimals, mineBlocks, getExpectedMintAmount, getExpectedBurnAmount } = require('../scripts/helpers');
 const { expect } = require('chai');
 
 // Mint and burn tests for xU3LP
@@ -15,24 +15,22 @@ describe('Contract: xU3LP', async () => {
   })
 
   describe('Mint and burn', async () => {
-    it('should mint xu3lp tokens to user', async () => {
+    it('should mint xu3lp tokens to user with asset 0', async () => {
         let amount = bnDecimals(1000000, token0Decimals);
         await xU3LP.connect(user).mintWithToken(0, amount);
         let balance = await getXU3LPBalance(xU3LP, user.address);
-        let feeDivisors = await xU3LP.feeDivisors();
-        let mintFee = feeDivisors.mintFee;
-
-        let amountInAsset1Terms = await xU3LP.getAmountInAsset1Terms(amount);
-        let amountWithoutFees = amountInAsset1Terms.sub(amountInAsset1Terms.div(mintFee))
-        if(token0Decimals < 18) {
-          amountWithoutFees = amountWithoutFees.mul(bn(10).pow(18 - token0Decimals));
-        }
-
-        const nav = await xU3LP.getNav();
-        const totalSupply = await xU3LP.totalSupply();
-        let calculatedBalance = bn(amountWithoutFees).mul(totalSupply).div(nav);
+        let calculatedBalance = await getExpectedMintAmount(xU3LP, amount, token0, true);
 
         expect(balance).to.eq(calculatedBalance);
+    }),
+
+    it('should mint xu3lp tokens to user with asset 1', async () => {
+      let amount = bnDecimals(1000000, token1Decimals);
+      await xU3LP.connect(user).mintWithToken(1, amount);
+      let balance = await getXU3LPBalance(xU3LP, user.address);
+      let calculatedBalance = await getExpectedMintAmount(xU3LP, amount, token1, false);
+
+      expect(balance).to.eq(calculatedBalance);
     }),
 
     it('should transfer asset balance from user when minting', async () => {
@@ -80,7 +78,7 @@ describe('Contract: xU3LP', async () => {
         let feeDivisors = await xU3LP.feeDivisors();
         let mintFee = feeDivisors.mintFee;
         let calculatedFeeAmount0 = (await xU3LP.getAmountInAsset1Terms(amount0)).div(mintFee);
-        let calculatedFeeAmount1 = (await xU3LP.getAmountInAsset0Terms(amount1)).div(mintFee);
+        let calculatedFeeAmount1 = amount1.div(mintFee);
         if(token0Decimals < 18) {
           calculatedFeeAmount0 = calculatedFeeAmount0.mul(bn(10).pow(18 - token0Decimals));
         } else if(token1Decimals < 18) {
@@ -107,7 +105,7 @@ describe('Contract: xU3LP', async () => {
       expect(balanceBefore.sub(burnAmount)).to.eq(balanceAfter);
     }),
 
-    it('should transfer asset balance back to user when burning', async () => {
+    it('should transfer asset 0 balance back to user when burning for asset 0', async () => {
       // mint so as to be able to burn
       let mintAmount = bnDecimals(1000000, token0Decimals);
       let burnAmount = bnDecimal(900000);
@@ -115,20 +113,7 @@ describe('Contract: xU3LP', async () => {
       await mineBlocks(5);
 
       // calculate expected returned asset mount
-      const nav = await xU3LP.getNav();
-      const totalSupply = await xU3LP.totalSupply();
-      let proRataBalance = (nav
-        .mul(await xU3LP.getAmountInAsset0Terms(burnAmount))).div(totalSupply);
-      let feeDivisors = await xU3LP.feeDivisors();
-      let burnFee = feeDivisors.burnFee;
-      let calculatedFee = proRataBalance.div(burnFee);
-      let expectedReturnedAssetAmount = (proRataBalance.sub(calculatedFee));
-      // divide by decimal difference (since burn amount is in xU3LP tokens)
-      let xu3lpDecimals = await xU3LP.decimals();
-      if(token0Decimals < xu3lpDecimals) {
-        let diffDivisor = bn(10).pow(bn(xu3lpDecimals - token0Decimals));
-        expectedReturnedAssetAmount = expectedReturnedAssetAmount.div(diffDivisor);
-      }
+      let expectedReturnedAssetAmount = await getExpectedBurnAmount(xU3LP, burnAmount, token0, true);
 
       // burn
       let token0BalanceBefore = await token0.balanceOf(user.address);
@@ -137,12 +122,21 @@ describe('Contract: xU3LP', async () => {
       expect(token0BalanceBefore.add(expectedReturnedAssetAmount)).to.be.eq(token0BalanceAfter);
     }),
 
-    it('should allow user to burn token even if there\'s not enough token balance', async () => {
-      await xU3LP.rebalance();
-      let balance0 = await token0.balanceOf(xU3LP.address);
-      let burnAmount = bnDecimal(9000000);
-      expect(balance0).to.be.lt(burnAmount);
-      await xU3LP.burn(0, burnAmount);
+    it('should transfer asset 1 balance back to user when burning for asset 1', async () => {
+      // mint so as to be able to burn
+      let mintAmount = bnDecimals(1000000, token1Decimals);
+      let burnAmount = bnDecimal(900000);
+      await xU3LP.connect(user).mintWithToken(1, mintAmount);
+      await mineBlocks(5);
+
+      // calculate expected returned asset mount
+      let expectedReturnedAssetAmount = await getExpectedBurnAmount(xU3LP, burnAmount, token1, false);
+
+      // burn
+      let token1BalanceBefore = await token1.balanceOf(user.address);
+      await xU3LP.connect(user).burn(1, burnAmount);
+      let token1BalanceAfter = await token1.balanceOf(user.address);
+      expect(token1BalanceBefore.add(expectedReturnedAssetAmount)).to.be.eq(token1BalanceAfter);
     }),
 
     it('shouldn\'t allow user to burn if he hasn\'t minted', async () => {
@@ -187,7 +181,7 @@ describe('Contract: xU3LP', async () => {
       nav = await xU3LP.getNav();
       totalSupply = await xU3LP.totalSupply();
       calculatedTokenAmount = bn(burnAmount).mul(nav).div(totalSupply);
-      let tokenAmount1 = await xU3LP.getAmountInAsset1Terms(calculatedTokenAmount);
+      let tokenAmount1 = await calculatedTokenAmount;
       let calculatedFeeAmount1 = tokenAmount1.div(burnFee);
 
       await xU3LP.connect(user).burn(1, burnAmount);

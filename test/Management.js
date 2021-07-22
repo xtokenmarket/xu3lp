@@ -8,7 +8,7 @@ describe('Contract: xU3LP', async () => {
   let xU3LP, token0, token1, token0Decimals, token1Decimals, admin, user1, user2, user3;
 
   beforeEach(async () => {
-      ({ xU3LP, token0, token1, token0Decimals, token1Decimals } = await deploymentFixture());
+      ({ xU3LP, token0, token1, xTokenManager, token0Decimals, token1Decimals } = await deploymentFixture());
       [admin, user1, user2, user3, ...addrs] = await ethers.getSigners();
       let mintAmount = bnDecimals(100000000, token0Decimals);
       let mintAmount2 = bnDecimals(100000000, token1Decimals);
@@ -22,8 +22,8 @@ describe('Contract: xU3LP', async () => {
       await mineBlocks(5);
       await xU3LP.rebalance();
       // set managers
-      await xU3LP.setManager(user1.address);
-      await xU3LP.setManager2(user2.address);
+      await xTokenManager.addManager(user1.address, xU3LP.address);
+      await xTokenManager.addManager(user2.address, xU3LP.address);
   })
 
   describe('Management', async () => {
@@ -52,7 +52,7 @@ describe('Contract: xU3LP', async () => {
         expect(prevTokenId).not.to.equal(newTokenId);
     }),
 
-    it('should allow admin to collect fees', async () => {
+    it('should allow revenue controller to collect fees', async () => {
         let adminToken0BalanceBefore = await token0.balanceOf(admin.address);
         let feesToken0 = await xU3LP.withdrawableToken0Fees();
         expect(feesToken0).not.equal(0);
@@ -65,17 +65,12 @@ describe('Contract: xU3LP', async () => {
         expect(adminToken0BalanceBefore).lt(adminToken0BalanceAfter);
     }),
 
-    it('should allow managers to collect fees', async () => {
-        let managerToken0BalanceBefore = await token0.balanceOf(user1.address);
+    it('shouldn\'t allow managers to collect fees', async () => {
         let feesToken0 = await xU3LP.withdrawableToken0Fees();
         expect(feesToken0).not.equal(0);
 
-        await xU3LP.connect(user1).withdrawFees();
-        feesToken0 = await xU3LP.withdrawableToken0Fees();
-        let managerToken0BalanceAfter = await token0.balanceOf(user1.address);
-
-        expect(feesToken0).to.equal(0);
-        expect(managerToken0BalanceBefore).lt(managerToken0BalanceAfter);
+        await expect(xU3LP.connect(user1).withdrawFees()).to.be.reverted;
+        await expect(xU3LP.connect(user2).withdrawFees()).to.be.reverted;
     }),
 
     it('should be able to set fee divisors', async () => {
