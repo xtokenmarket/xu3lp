@@ -711,7 +711,11 @@ contract xU3LPStable is
     /*
      * Withdraw function for token0 and token1 fees
      */
-    function withdrawFees() external onlyOwnerOrManager {
+    function withdrawFees() external {
+        require(
+            xTokenManager.isRevenueController(msg.sender),
+            "Callable only by Revenue Controller"
+        );
         uint256 token0Fees =
             getToken0AmountInNativeDecimals(withdrawableToken0Fees);
         uint256 token1Fees =
@@ -804,7 +808,7 @@ contract xU3LPStable is
     modifier onlyOwnerOrManager {
         require(
             msg.sender == owner() ||
-            xTokenManager.isManager(msg.sender, address(this)),
+                xTokenManager.isManager(msg.sender, address(this)),
             "Function may be called only by owner or manager"
         );
         _;

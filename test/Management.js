@@ -52,7 +52,7 @@ describe('Contract: xU3LP', async () => {
         expect(prevTokenId).not.to.equal(newTokenId);
     }),
 
-    it('should allow admin to collect fees', async () => {
+    it('should allow revenue controller to collect fees', async () => {
         let adminToken0BalanceBefore = await token0.balanceOf(admin.address);
         let feesToken0 = await xU3LP.withdrawableToken0Fees();
         expect(feesToken0).not.equal(0);
@@ -65,17 +65,12 @@ describe('Contract: xU3LP', async () => {
         expect(adminToken0BalanceBefore).lt(adminToken0BalanceAfter);
     }),
 
-    it('should allow managers to collect fees', async () => {
-        let managerToken0BalanceBefore = await token0.balanceOf(user1.address);
+    it('shouldn\'t allow managers to collect fees', async () => {
         let feesToken0 = await xU3LP.withdrawableToken0Fees();
         expect(feesToken0).not.equal(0);
 
-        await xU3LP.connect(user1).withdrawFees();
-        feesToken0 = await xU3LP.withdrawableToken0Fees();
-        let managerToken0BalanceAfter = await token0.balanceOf(user1.address);
-
-        expect(feesToken0).to.equal(0);
-        expect(managerToken0BalanceBefore).lt(managerToken0BalanceAfter);
+        await expect(xU3LP.connect(user1).withdrawFees()).to.be.reverted;
+        await expect(xU3LP.connect(user2).withdrawFees()).to.be.reverted;
     }),
 
     it('should be able to set fee divisors', async () => {

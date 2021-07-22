@@ -19,9 +19,9 @@ describe('Contract: xU3LP', async () => {
     }),
     it('should allow new managers to call management functions', async () => {
         await xTokenManager.addManager(user1.address, xU3LP.address);
-        await xU3LP.connect(user1).withdrawFees();
+        await xU3LP.connect(user1).pauseContract();
         await xTokenManager.addManager(user2.address, xU3LP.address);
-        await xU3LP.connect(user2).withdrawFees();
+        await xU3LP.connect(user2).unpauseContract();
         assert(true);
     }),
     it('shouldn\'t allow non-managers to call management functions', async () => {

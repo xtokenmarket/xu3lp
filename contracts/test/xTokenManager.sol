@@ -9,6 +9,9 @@ contract xTokenManager is Initializable, OwnableUpgradeable {
     // of an map of fund to whether the address manages that fund
     mapping(address => mapping(address => bool)) managers;
 
+    // address which can withdraw fund fees
+    address revenueController;
+
     function initialize() external initializer {
         __Context_init_unchained();
         __Ownable_init_unchained();
@@ -40,5 +43,23 @@ contract xTokenManager is Initializable, OwnableUpgradeable {
         returns (bool)
     {
         return managers[manager][fund];
+    }
+
+    /**
+     * @dev Set revenue controller
+     */
+    function setRevenueController(address controller) external onlyOwner {
+        require(
+            revenueController == address(0),
+            "Revenue controller can be set only once"
+        );
+        revenueController = controller;
+    }
+
+    /**
+     * @dev Check if address is revenue controller
+     */
+    function isRevenueController(address caller) public view returns (bool) {
+        return revenueController == caller;
     }
 }

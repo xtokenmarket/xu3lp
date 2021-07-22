@@ -89,6 +89,7 @@ async function deployTokenManager(instanceAddress) {
     const xTokenManager = await ethers.getContractAt('xTokenManager', proxy.address);
     await xTokenManager.initialize();
     await xTokenManager.addManager(admin.address, instanceAddress);
+    await xTokenManager.setRevenueController(admin.address);
     return xTokenManager;
 }
 

@@ -19,4 +19,14 @@ interface IxTokenManager {
         external
         view
         returns (bool);
+
+    /**
+     * @dev Set revenue controller
+     */
+    function setRevenueController(address controller) external;
+
+    /**
+     * @dev Check if address is revenue controller
+     */
+    function isRevenueController(address caller) external view returns (bool);
 }
