@@ -803,6 +803,7 @@ contract xU3LPStable is
 
     modifier onlyOwnerOrManager {
         require(
+            msg.sender == owner() ||
             xTokenManager.isManager(msg.sender, address(this)),
             "Function may be called only by owner or manager"
         );
@@ -1041,6 +1042,7 @@ contract xU3LPStable is
      * Set xTokenManager contract
      */
     function setxTokenManager(IxTokenManager _manager) external onlyOwner {
+        require(address(xTokenManager) == address(0));
         xTokenManager = _manager;
     }
 
