@@ -519,16 +519,14 @@ contract xU3LPStable is
         (uint256 _amount0, uint256 _amount1) = withdrawAll();
         // burn current position NFT
         UniswapLibrary.burn(positionManagerAddress, tokenId);
-        tokenId = 0;
         // set new ticks and prices
         tickLower = newTickLower;
         tickUpper = newTickUpper;
         priceLower = UniswapLibrary.getSqrtRatio(newTickLower);
         priceUpper = UniswapLibrary.getSqrtRatio(newTickUpper);
 
-        // if amounts don't add up when minting, swap tokens
         (uint256 amount0, uint256 amount1) =
-            checkIfAmountsMatchAndSwap(_amount0, _amount1);
+            calculatePoolMintedAmounts(_amount0, _amount1);
 
         // mint the position NFT and deposit the liquidity
         // set new NFT token id
