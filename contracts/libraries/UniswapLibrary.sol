@@ -488,7 +488,7 @@ library UniswapLibrary {
         require(
             xU3LP &&
                 amountOutReceived >
-                amountInSwapped.sub(amountInSwapped.div(SWAP_SLIPPAGE * 2)),
+                amountInSwapped.sub(amountInSwapped.div(SWAP_SLIPPAGE / 2)),
             "One inch swap slippage > 2 %"
         );
     }
